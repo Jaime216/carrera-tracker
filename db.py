@@ -24,8 +24,10 @@ def execute_query(query, params=None):
     args = []
     if params:
         for p in params:
-            if isinstance(p, (int, float)):
-                args.append({"type": "float" if isinstance(p, float) else "integer", "value": str(p)})
+            if isinstance(p, float):
+                args.append({"type": "float", "value": p})  # <-- SIN EL str()
+            elif isinstance(p, int):
+                args.append({"type": "integer", "value": str(p)}) # Turso requiere los integers como texto para evitar desbordamientos, pero los floats como número
             elif p is None:
                 args.append({"type": "null"})
             else:
