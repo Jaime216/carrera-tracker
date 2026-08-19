@@ -1,5 +1,7 @@
 # Base de datos local (¡Privado!)
 carrera.db
+poblar.py
+app.py.bak
 
 # Archivos temporales de Python
 __pycache__/
