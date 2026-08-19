@@ -1,0 +1,11 @@
+# Base de datos local (¡Privado!)
+carrera.db
+
+# Archivos temporales de Python
+__pycache__/
+*.pyc
+
+# Entornos virtuales (si usas)
+venv/
+.venv/
+credentials.json
