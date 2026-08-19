@@ -18,6 +18,14 @@ def init_db():
     except: pass 
     try: cursor.execute("ALTER TABLE asignaturas ADD COLUMN num_matricula INTEGER DEFAULT 1")
     except: pass
+    
+    # NUEVAS COLUMNAS PARA ENLACES RÁPIDOS
+    try: cursor.execute("ALTER TABLE asignaturas ADD COLUMN link_guia TEXT")
+    except: pass
+    try: cursor.execute("ALTER TABLE asignaturas ADD COLUMN link_campus TEXT")
+    except: pass
+    try: cursor.execute("ALTER TABLE asignaturas ADD COLUMN link_apuntes TEXT")
+    except: pass
         
     cursor.execute('''CREATE TABLE IF NOT EXISTS asistencia (
         id_registro TEXT PRIMARY KEY, fecha TEXT, id_asignatura TEXT, 
@@ -34,6 +42,11 @@ def init_db():
         id_horario TEXT PRIMARY KEY, id_asignatura TEXT, dia_semana TEXT, 
         hora_inicio TEXT, hora_fin TEXT)''')
         
+    try: cursor.execute("ALTER TABLE horario ADD COLUMN tipo TEXT DEFAULT 'Teoría'")
+    except: pass
+    try: cursor.execute("ALTER TABLE horario ADD COLUMN frecuencia TEXT DEFAULT 'Todas'")
+    except: pass
+        
     cursor.execute('''CREATE TABLE IF NOT EXISTS entregas (
         id_entrega TEXT PRIMARY KEY, id_asignatura TEXT, descripcion TEXT, 
         fecha_limite TEXT, ponderacion REAL, completada INTEGER)''')
@@ -41,6 +54,9 @@ def init_db():
     cursor.execute('''CREATE TABLE IF NOT EXISTS reglas (
         id_regla TEXT PRIMARY KEY, id_asignatura TEXT, descripcion TEXT, 
         tipo TEXT, ids_evaluaciones TEXT, valor_exigido REAL)''')
+        
+    cursor.execute('''CREATE TABLE IF NOT EXISTS creditos_extra (
+        id_credito TEXT PRIMARY KEY, descripcion TEXT, creditos REAL, fecha TEXT)''')
         
     conn.commit()
     conn.close()
@@ -127,7 +143,7 @@ def delete_calificacion(id_evaluacion: str):
 # ------------------------------------------------------------------------------
 # ASIGNATURAS Y EXPEDIENTE
 # ------------------------------------------------------------------------------
-def add_asignatura(nombre: str, curso: int, cuatrimestre: int, creditos: float, min_asistencia_pct: float, comentarios: str = "", num_matricula: int = 1):
+def add_asignatura(nombre: str, curso: int, cuatrimestre: int, creditos: float, min_asistencia_pct: float, comentarios: str = "", num_matricula: int = 1, link_guia: str = "", link_campus: str = "", link_apuntes: str = ""):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT id_asignatura FROM asignaturas")
@@ -137,11 +153,29 @@ def add_asignatura(nombre: str, curso: int, cuatrimestre: int, creditos: float, 
     while nuevo_id in existentes:
         siguiente += 1
         nuevo_id = f"ASIG-{siguiente:02d}"
-    cursor.execute("INSERT INTO asignaturas VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                   (nuevo_id, nombre.strip(), int(curso), int(cuatrimestre), float(creditos), float(min_asistencia_pct), "Cursando", 0.0, comentarios, int(num_matricula)))
+    
+    # Inserción segura asegurando los nombres de columna
+    cursor.execute("""
+        INSERT INTO asignaturas 
+        (id_asignatura, nombre, curso, cuatrimestre, creditos, min_asistencia_pct, estado, nota_final, comentarios, num_matricula, link_guia, link_campus, link_apuntes) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", 
+        (nuevo_id, nombre.strip(), int(curso), int(cuatrimestre), float(creditos), float(min_asistencia_pct), "Cursando", 0.0, comentarios, int(num_matricula), link_guia, link_campus, link_apuntes))
     conn.commit()
     conn.close()
     return nuevo_id
+
+def edit_asignatura(id_asignatura: str, nombre: str, curso: int, cuatrimestre: int, creditos: float, min_asistencia_pct: float, comentarios: str, num_matricula: int, link_guia: str, link_campus: str, link_apuntes: str):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE asignaturas 
+        SET nombre=?, curso=?, cuatrimestre=?, creditos=?, min_asistencia_pct=?, 
+            comentarios=?, num_matricula=?, link_guia=?, link_campus=?, link_apuntes=? 
+        WHERE id_asignatura=?""", 
+        (nombre.strip(), int(curso), int(cuatrimestre), float(creditos), float(min_asistencia_pct), comentarios, int(num_matricula), link_guia, link_campus, link_apuntes, id_asignatura))
+    conn.commit()
+    conn.close()
+    return True
 
 def delete_asignatura(id_asignatura: str):
     conn = sqlite3.connect(DB_FILE)
@@ -172,21 +206,21 @@ def suspender_asignatura(id_asignatura: str, nota_final: float):
 # ------------------------------------------------------------------------------
 # HORARIO
 # ------------------------------------------------------------------------------
-def add_horario(id_asignatura: str, dia: str, inicio: str, fin: str):
+def add_horario(id_asignatura: str, dia: str, inicio: str, fin: str, tipo: str = "Teoría", frecuencia: str = "Todas"):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     id_hor = str(uuid.uuid4())[:8]
-    cursor.execute("INSERT INTO horario VALUES (?, ?, ?, ?, ?)", 
-                   (id_hor, id_asignatura, dia, inicio, fin))
+    cursor.execute("INSERT INTO horario (id_horario, id_asignatura, dia_semana, hora_inicio, hora_fin, tipo, frecuencia) VALUES (?, ?, ?, ?, ?, ?, ?)", 
+                   (id_hor, id_asignatura, dia, inicio, fin, tipo, frecuencia))
     conn.commit()
     conn.close()
     return True
 
-def edit_horario(id_horario: str, dia: str, inicio: str, fin: str):
+def edit_horario(id_horario: str, dia: str, inicio: str, fin: str, tipo: str, frecuencia: str):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("UPDATE horario SET dia_semana=?, hora_inicio=?, hora_fin=? WHERE id_horario=?", 
-                   (dia, inicio, fin, id_horario))
+    cursor.execute("UPDATE horario SET dia_semana=?, hora_inicio=?, hora_fin=?, tipo=?, frecuencia=? WHERE id_horario=?", 
+                   (dia, inicio, fin, tipo, frecuencia, id_horario))
     conn.commit()
     conn.close()
     return True
@@ -239,7 +273,7 @@ def delete_entrega(id_entrega: str):
     return True
 
 # ------------------------------------------------------------------------------
-# REGLAS
+# REGLAS Y CRÉDITOS EXTRA
 # ------------------------------------------------------------------------------
 def add_regla(id_asignatura: str, descripcion: str, tipo: str, ids_evaluaciones: str, valor_exigido: float):
     conn = sqlite3.connect(DB_FILE)
@@ -259,10 +293,29 @@ def delete_regla(id_regla: str):
     conn.close()
     return True
 
+def add_credito_extra(descripcion: str, creditos: float, fecha: str):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    id_credito = str(uuid.uuid4())[:8]
+    cursor.execute("INSERT INTO creditos_extra VALUES (?, ?, ?, ?)", 
+                   (id_credito, descripcion, float(creditos), fecha))
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_credito_extra(id_credito: str):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM creditos_extra WHERE id_credito = ?", (id_credito,))
+    conn.commit()
+    conn.close()
+    return True
+
 def reset_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    for tabla in ["asignaturas", "asistencia", "calificaciones", "horario", "entregas", "reglas"]:
-        cursor.execute(f"DELETE FROM {tabla}")
+    for tabla in ["asignaturas", "asistencia", "calificaciones", "horario", "entregas", "reglas", "creditos_extra"]:
+        try: cursor.execute(f"DELETE FROM {tabla}")
+        except: pass
     conn.commit()
     conn.close()

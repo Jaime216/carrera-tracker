@@ -10,7 +10,7 @@ st.set_page_config(page_title="Control Académico", page_icon="🎓", layout="wi
 st.title("🎓 Control de Carrera Universitaria")
 
 # ------------------------------------------------------------------------------
-# 1. CARGA Y LIMPIEZA DE DATOS
+# 1. CARGA Y LIMPIEZA DE DATOS (CON PARCHES PANDAS)
 # ------------------------------------------------------------------------------
 try:
     df_asignaturas = db.get_table("asignaturas")
@@ -21,6 +21,8 @@ try:
     except: df_entregas = pd.DataFrame()
     try: df_reglas = db.get_table("reglas")
     except: df_reglas = pd.DataFrame()
+    try: df_creditos_extra = db.get_table("creditos_extra")
+    except: df_creditos_extra = pd.DataFrame()
 except Exception as e:
     st.error(f"❌ Error al cargar la base de datos: {e}")
     st.stop()
@@ -31,10 +33,26 @@ mapa_nombres_rev = {}
 mapa_activas = {}
 
 if not df_asignaturas.empty:
-    df_asignaturas["estado"] = df_asignaturas.get("estado", "Cursando").fillna("Cursando").replace("", "Cursando")
-    df_asignaturas["nota_final"] = pd.to_numeric(df_asignaturas.get("nota_final", 0), errors="coerce").fillna(0)
-    df_asignaturas["creditos"] = pd.to_numeric(df_asignaturas.get("creditos", 0), errors="coerce").fillna(0)
-    df_asignaturas["num_matricula"] = pd.to_numeric(df_asignaturas.get("num_matricula", 1), errors="coerce").fillna(1).astype(int)
+    if "estado" not in df_asignaturas.columns: df_asignaturas["estado"] = "Cursando"
+    df_asignaturas["estado"] = df_asignaturas["estado"].fillna("Cursando").replace("", "Cursando")
+    
+    if "nota_final" not in df_asignaturas.columns: df_asignaturas["nota_final"] = 0.0
+    df_asignaturas["nota_final"] = pd.to_numeric(df_asignaturas["nota_final"], errors="coerce").fillna(0.0)
+    
+    if "creditos" not in df_asignaturas.columns: df_asignaturas["creditos"] = 0.0
+    df_asignaturas["creditos"] = pd.to_numeric(df_asignaturas["creditos"], errors="coerce").fillna(0.0)
+    
+    if "num_matricula" not in df_asignaturas.columns: df_asignaturas["num_matricula"] = 1
+    df_asignaturas["num_matricula"] = pd.to_numeric(df_asignaturas["num_matricula"], errors="coerce").fillna(1).astype(int)
+    
+    if "link_guia" not in df_asignaturas.columns: df_asignaturas["link_guia"] = ""
+    df_asignaturas["link_guia"] = df_asignaturas["link_guia"].fillna("").astype(str)
+    
+    if "link_campus" not in df_asignaturas.columns: df_asignaturas["link_campus"] = ""
+    df_asignaturas["link_campus"] = df_asignaturas["link_campus"].fillna("").astype(str)
+    
+    if "link_apuntes" not in df_asignaturas.columns: df_asignaturas["link_apuntes"] = ""
+    df_asignaturas["link_apuntes"] = df_asignaturas["link_apuntes"].fillna("").astype(str)
     
     cols_asig = {str(c).strip().lower(): c for c in df_asignaturas.columns}
     col_id = cols_asig.get("id_asignatura") or cols_asig.get("id")
@@ -46,7 +64,7 @@ if not df_asignaturas.empty:
         df_asignaturas[col_min_asis] = pd.to_numeric(df_asignaturas[col_min_asis], errors="coerce").fillna(80.0)
         
         for _, row in df_asignaturas.iterrows():
-            matricula_badge = f" (M{row['num_matricula']})" if row["num_matricula"] > 1 else ""
+            matricula_badge = f" (M{row['num_matricula']})" if row['num_matricula'] > 1 else ""
             txt = f"{row[col_id]} - {row[col_nom]}{matricula_badge}"
             mapa_asignaturas[txt] = str(row[col_id])
             mapa_nombres_rev[str(row[col_id])] = f"{row[col_nom]}{matricula_badge}"
@@ -56,23 +74,38 @@ if not df_asignaturas.empty:
 
 if not df_asistencia.empty:
     df_asistencia.columns = df_asistencia.columns.str.strip().str.lower()
+    if "fecha" not in df_asistencia.columns: df_asistencia["fecha"] = pd.NA
     df_asistencia["fecha"] = pd.to_datetime(df_asistencia["fecha"], errors="coerce")
+    
     if "tipo" not in df_asistencia.columns: df_asistencia["tipo"] = "Teoría"
-    else: df_asistencia["tipo"] = df_asistencia["tipo"].fillna("Teoría").replace("", "Teoría")
+    df_asistencia["tipo"] = df_asistencia["tipo"].fillna("Teoría").replace("", "Teoría")
 
 if not df_notas.empty:
     df_notas.columns = df_notas.columns.str.strip().str.lower()
+    
+    if "nota" not in df_notas.columns: df_notas["nota"] = pd.NA
     df_notas["nota"] = pd.to_numeric(df_notas["nota"], errors="coerce")
+    
+    if "ponderacion_pct" not in df_notas.columns: df_notas["ponderacion_pct"] = pd.NA
     df_notas["ponderacion_pct"] = pd.to_numeric(df_notas["ponderacion_pct"], errors="coerce")
-    df_notas["nota_minima"] = pd.to_numeric(df_notas.get("nota_minima", 0.0), errors="coerce").fillna(0.0)
+    
+    if "nota_minima" not in df_notas.columns: df_notas["nota_minima"] = 0.0
+    df_notas["nota_minima"] = pd.to_numeric(df_notas["nota_minima"], errors="coerce").fillna(0.0)
+    
+    if "fecha" not in df_notas.columns: df_notas["fecha"] = pd.NA
     df_notas["fecha"] = pd.to_datetime(df_notas["fecha"], errors="coerce")
+    
     if "estado" not in df_notas.columns: df_notas["estado"] = "Realizado"
-    else: df_notas["estado"] = df_notas["estado"].fillna("Realizado").replace("", "Realizado")
+    df_notas["estado"] = df_notas["estado"].fillna("Realizado").replace("", "Realizado")
+    
     if "tipo" not in df_notas.columns: df_notas["tipo"] = "Teoría"
-    else: df_notas["tipo"] = df_notas["tipo"].fillna("Teoría").replace("", "Teoría")
+    df_notas["tipo"] = df_notas["tipo"].fillna("Teoría").replace("", "Teoría")
 
 if not df_entregas.empty:
+    if "fecha_limite" not in df_entregas.columns: df_entregas["fecha_limite"] = pd.NA
     df_entregas["fecha_limite"] = pd.to_datetime(df_entregas["fecha_limite"], errors="coerce")
+    
+    if "completada" not in df_entregas.columns: df_entregas["completada"] = 0
     df_entregas["completada"] = pd.to_numeric(df_entregas["completada"], errors="coerce").fillna(0).astype(int)
 
 # ------------------------------------------------------------------------------
@@ -95,21 +128,29 @@ with tab_dash:
             df_aprobadas = df_asignaturas[df_asignaturas["estado"] == "Aprobada"].copy()
             df_cursando = df_asignaturas[df_asignaturas["estado"] == "Cursando"].copy()
             
-            creditos_conseguidos = df_aprobadas["creditos"].sum() if not df_aprobadas.empty else 0.0
+            creditos_asig = df_aprobadas["creditos"].sum() if not df_aprobadas.empty else 0.0
+            creditos_ext = df_creditos_extra["creditos"].sum() if not df_creditos_extra.empty else 0.0
+            creditos_totales = creditos_asig + creditos_ext
+            
             media_expediente = 0.0
-            if creditos_conseguidos > 0:
+            if creditos_asig > 0:
                 suma_ponderada = (df_aprobadas["nota_final"] * df_aprobadas["creditos"]).sum()
-                media_expediente = round(suma_ponderada / creditos_conseguidos, 2)
+                media_expediente = round(suma_ponderada / creditos_asig, 2)
 
             st.subheader("Expediente Académico")
             kpi1, kpi2, kpi3, kpi4 = st.columns(4)
             kpi1.metric("📚 Asig. Cursando", len(df_cursando))
             kpi2.metric("✅ Asig. Aprobadas", len(df_aprobadas))
-            kpi3.metric("🏆 Créditos Superados", f"{creditos_conseguidos} ECTS")
+            kpi3.metric("🏆 Créditos Superados", f"{creditos_totales} ECTS")
             kpi4.metric("⭐ Media Expediente", media_expediente)
 
             st.divider()
-            df_notas_realizadas = df_notas[df_notas["estado"] == "Realizado"] if not df_notas.empty else pd.DataFrame()
+            
+            if not df_notas.empty and "estado" in df_notas.columns:
+                df_notas_realizadas = df_notas[df_notas["estado"] == "Realizado"]
+            else:
+                df_notas_realizadas = pd.DataFrame(columns=["id_asignatura", "nota", "ponderacion_pct", "estado"])
+
             col_g1, col_g2 = st.columns(2)
 
             with col_g1:
@@ -117,12 +158,15 @@ with tab_dash:
                 notas_resumen = []
                 for id_asig, nom_asig in mapa_nombres_rev.items():
                     if id_asig in mapa_activas.values():
-                        sub_n = df_notas_realizadas[df_notas_realizadas["id_asignatura"] == id_asig]
-                        if not sub_n.empty:
-                            peso_total = sub_n["ponderacion_pct"].sum()
-                            nota_acumulada = (sub_n["nota"] * (sub_n["ponderacion_pct"] / 100.0)).sum()
-                            nota_sobre_10 = (nota_acumulada / (peso_total / 100.0)) if peso_total > 0 else 0
-                            notas_resumen.append({"Asignatura": nom_asig, "Media Evaluada (0-10)": round(nota_sobre_10, 2)})
+                        if not df_notas_realizadas.empty and "id_asignatura" in df_notas_realizadas.columns:
+                            sub_n = df_notas_realizadas[df_notas_realizadas["id_asignatura"] == id_asig]
+                            if not sub_n.empty:
+                                peso_total = sub_n["ponderacion_pct"].sum()
+                                nota_acumulada = (sub_n["nota"] * (sub_n["ponderacion_pct"] / 100.0)).sum()
+                                nota_sobre_10 = (nota_acumulada / (peso_total / 100.0)) if peso_total > 0 else 0
+                                notas_resumen.append({"Asignatura": nom_asig, "Media Evaluada (0-10)": round(nota_sobre_10, 2)})
+                            else:
+                                notas_resumen.append({"Asignatura": nom_asig, "Media Evaluada (0-10)": 0.0})
                         else:
                             notas_resumen.append({"Asignatura": nom_asig, "Media Evaluada (0-10)": 0.0})
 
@@ -293,18 +337,35 @@ with tab_dash:
 # ==============================================================================
 with tab_horario:
     st.subheader("🗓️ Horario de Clases (Asignaturas Activas)")
+    
+    if not df_horario.empty:
+        if 'tipo' not in df_horario.columns:
+            df_horario['tipo'] = 'Teoría'
+        df_horario['tipo'] = df_horario['tipo'].fillna('Teoría')
+        
+        if 'frecuencia' not in df_horario.columns:
+            df_horario['frecuencia'] = 'Todas'
+        df_horario['frecuencia'] = df_horario['frecuencia'].fillna('Todas')
+        
     if not mapa_activas:
         st.info("No tienes asignaturas 'En curso'.")
     else:
         with st.expander("➕ Añadir clase al horario"):
             with st.form("form_horario", clear_on_submit=True):
-                c1, c2, c3, c4 = st.columns(4)
-                with c1: h_asig = st.selectbox("Asignatura", list(mapa_activas.keys()))
-                with c2: h_dia = st.selectbox("Día", ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"])
-                with c3: h_ini = st.time_input("Hora Inicio", value=pd.to_datetime("09:00").time())
-                with c4: h_fin = st.time_input("Hora Fin", value=pd.to_datetime("11:00").time())
+                c1, c2 = st.columns(2)
+                with c1: 
+                    h_asig = st.selectbox("Asignatura", list(mapa_activas.keys()))
+                    h_dia = st.selectbox("Día", ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"])
+                    h_tipo = st.radio("Tipo de clase", ["Teoría", "Laboratorio"], horizontal=True)
+                with c2: 
+                    c_h1, c_h2 = st.columns(2)
+                    with c_h1: h_ini = st.time_input("Hora Inicio", value=pd.to_datetime("09:00").time())
+                    with c_h2: h_fin = st.time_input("Hora Fin", value=pd.to_datetime("11:00").time())
+                    h_frec = st.selectbox("Frecuencia", ["Todas las semanas", "Semanas pares", "Semanas impares"])
+                
                 if st.form_submit_button("Añadir al horario", width="stretch"):
-                    db.add_horario(mapa_activas[h_asig], h_dia, h_ini.strftime("%H:%M"), h_fin.strftime("%H:%M"))
+                    frec_db = "Todas" if h_frec == "Todas las semanas" else ("Pares" if h_frec == "Semanas pares" else "Impares")
+                    db.add_horario(mapa_activas[h_asig], h_dia, h_ini.strftime("%H:%M"), h_fin.strftime("%H:%M"), h_tipo, frec_db)
                     st.rerun()
                     
         with st.expander("✏️ Editar o Eliminar clase existente"):
@@ -318,25 +379,40 @@ with tab_horario:
                     opciones_h = {}
                     for _, r in df_h_act.iterrows():
                         n_asig = mapa_nombres_rev.get(str(r['id_asignatura']), "Asig")
-                        etiq = f"{n_asig} | {r['dia_semana']} ({r['hora_inicio']} - {r['hora_fin']})"
+                        frec_txt = "" if r['frecuencia'] == "Todas" else f" ({r['frecuencia']})"
+                        etiq = f"{n_asig} | {r['dia_semana']} ({r['hora_inicio']} - {r['hora_fin']}){frec_txt}"
                         opciones_h[etiq] = str(r['id_horario'])
                     
                     sel_h = st.selectbox("Clase a modificar", list(opciones_h.keys()))
                     if sel_h:
                         id_h = opciones_h[sel_h]
                         r_h = df_h_act[df_h_act['id_horario'] == id_h].iloc[0]
+                        
+                        idx_tipo_h = 1 if r_h.get('tipo') == "Laboratorio" else 0
+                        frec_val = r_h.get('frecuencia', 'Todas')
+                        idx_frec_h = 0
+                        if frec_val == "Pares": idx_frec_h = 1
+                        elif frec_val == "Impares": idx_frec_h = 2
+                        
                         with st.form("form_edit_horario"):
-                            c1, c2, c3 = st.columns(3)
+                            c1, c2 = st.columns(2)
                             dias_validos = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
                             idx_dia = dias_validos.index(r_h['dia_semana']) if r_h['dia_semana'] in dias_validos else 0
-                            with c1: e_dia = st.selectbox("Día", dias_validos, index=idx_dia)
-                            with c2: e_ini = st.time_input("Hora Inicio", value=pd.to_datetime(r_h['hora_inicio']).time())
-                            with c3: e_fin = st.time_input("Hora Fin", value=pd.to_datetime(r_h['hora_fin']).time())
+                            
+                            with c1: 
+                                e_dia = st.selectbox("Día", dias_validos, index=idx_dia)
+                                e_tipo = st.radio("Tipo de clase", ["Teoría", "Laboratorio"], index=idx_tipo_h, horizontal=True)
+                            with c2: 
+                                c_e1, c_e2 = st.columns(2)
+                                with c_e1: e_ini = st.time_input("Hora Inicio", value=pd.to_datetime(r_h['hora_inicio']).time())
+                                with c_e2: e_fin = st.time_input("Hora Fin", value=pd.to_datetime(r_h['hora_fin']).time())
+                                e_frec = st.selectbox("Frecuencia", ["Todas las semanas", "Semanas pares", "Semanas impares"], index=idx_frec_h)
                             
                             c_btn1, c_btn2 = st.columns(2)
                             with c_btn1:
                                 if st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True):
-                                    db.edit_horario(id_h, e_dia, e_ini.strftime("%H:%M"), e_fin.strftime("%H:%M"))
+                                    frec_db = "Todas" if e_frec == "Todas las semanas" else ("Pares" if e_frec == "Semanas pares" else "Impares")
+                                    db.edit_horario(id_h, e_dia, e_ini.strftime("%H:%M"), e_fin.strftime("%H:%M"), e_tipo, frec_db)
                                     st.rerun()
                             with c_btn2:
                                 if st.form_submit_button("🗑️ Eliminar Clase", use_container_width=True):
@@ -353,7 +429,14 @@ with tab_horario:
                     for _, clase in df_horario[df_horario["dia_semana"] == dia].sort_values("hora_inicio").iterrows():
                         id_asig = str(clase["id_asignatura"])
                         nom = mapa_nombres_rev.get(id_asig, id_asig)
-                        st.markdown(f"<div style='border-left: 2px solid #9CA3AF; padding-left: 8px; margin-bottom: 14px;'><div style='font-size:10px; color:var(--text-color); opacity:0.6;'>{clase['hora_inicio']} - {clase['hora_fin']}</div><div style='font-size:11px; font-weight:600; color:var(--text-color); margin-top:2px;'>{nom}</div></div>", unsafe_allow_html=True)
+                        
+                        tipo_str = "🧪" if clase.get('tipo') == "Laboratorio" else "📖"
+                        frec_val = clase.get('frecuencia', 'Todas')
+                        frec_str = ""
+                        if frec_val == "Pares": frec_str = " *(Pares)*"
+                        elif frec_val == "Impares": frec_str = " *(Impares)*"
+                        
+                        st.markdown(f"<div style='border-left: 2px solid #9CA3AF; padding-left: 8px; margin-bottom: 14px;'><div style='font-size:10px; color:var(--text-color); opacity:0.6;'>{clase['hora_inicio']} - {clase['hora_fin']}{frec_str}</div><div style='font-size:11px; font-weight:600; color:var(--text-color); margin-top:2px;'>{tipo_str} {nom}</div></div>", unsafe_allow_html=True)
 
 # ==============================================================================
 # TAB 3: ASISTENCIA
@@ -820,74 +903,172 @@ with tab_entregas:
                                     st.rerun()
 
 # ==============================================================================
-# TAB 6: ASIGNATURAS
+# TAB 6: ASIGNATURAS Y ENLACES
 # ==============================================================================
 with tab_asig:
-    col_c, col_a = st.columns(2)
-    
-    with col_c:
-        st.subheader("➕ Crear Asignatura")
-        with st.form("form_nasig", clear_on_submit=True):
-            nom = st.text_input("Nombre de la Asignatura")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                curso = st.selectbox("Curso", [1, 2, 3, 4, 5, 6], index=0)
-            with c2:
-                cuatri = st.selectbox("Cuatrimestre", [1, 2, 3], index=0)
-            with c3:
-                matricula = st.number_input("Nº Matrícula", min_value=1, max_value=6, value=1)
-                
-            c4, c5 = st.columns(2)
-            with c4:
-                creditos = st.number_input("Créditos ECTS", min_value=1.0, max_value=30.0, value=6.0, step=0.5)
-            with c5:
-                min_asistencia = st.number_input("% Mín. Asistencia", min_value=0, max_value=100, value=80, step=5)
-            
-            comentarios = st.text_area("Detalles (Profesor, aula, link al campus virtual...)")
-            
-            if st.form_submit_button("Crear Asignatura", width="stretch"):
-                if not nom.strip():
-                    st.error("El nombre es obligatorio.")
-                else:
-                    db.add_asignatura(nom, curso, cuatri, creditos, min_asistencia, comentarios, matricula)
-                    st.rerun()
+    sub_asig, sub_extra = st.tabs(["📚 Asignaturas", "🏅 Convalidaciones y Extra"])
 
-    with col_a:
-        st.subheader("🏁 Finalizar Asignatura")
-        if mapa_activas:
-            with st.form("form_ap"):
-                asig_ap = st.selectbox("Asignatura a cerrar", list(mapa_activas.keys()))
-                resultado = st.radio("Resultado final", ["Aprobada", "Suspensada"], horizontal=True)
-                notaf = st.number_input("Nota Definitiva (Acta)", value=5.0, min_value=0.0, max_value=10.0, step=0.1)
+    with sub_asig:
+        col_c, col_a = st.columns(2)
+        
+        with col_c:
+            st.subheader("➕ Crear Asignatura")
+            with st.form("form_nasig", clear_on_submit=True):
+                nom = st.text_input("Nombre de la Asignatura")
+                c1, c2, c3 = st.columns(3)
+                with c1: curso = st.selectbox("Curso", [1, 2, 3, 4, 5, 6], index=0)
+                with c2: cuatri = st.selectbox("Cuatrimestre", [1, 2, 3], index=0)
+                with c3: matricula = st.number_input("Nº Matrícula", min_value=1, max_value=6, value=1)
+                    
+                c4, c5 = st.columns(2)
+                with c4: creditos = st.number_input("Créditos ECTS", min_value=1.0, max_value=30.0, value=6.0, step=0.5)
+                with c5: min_asistencia = st.number_input("% Mín. Asistencia", min_value=0, max_value=100, value=80, step=5)
                 
-                if st.form_submit_button("Guardar Resultado", width="stretch"):
-                    if resultado == "Aprobada":
-                        db.aprobar_asignatura(mapa_activas[asig_ap], notaf)
-                        st.success(f"¡Asignatura superada con un {notaf}!")
+                st.markdown("**Enlaces Rápidos (Opcional)**")
+                cl1, cl2, cl3 = st.columns(3)
+                with cl1: l_camp = st.text_input("🌐 Campus Virtual URL")
+                with cl2: l_guia = st.text_input("📄 Guía Docente URL")
+                with cl3: l_apun = st.text_input("📁 Carpeta Apuntes URL")
+                
+                comentarios = st.text_area("Detalles (Profesor, aula...)")
+                
+                if st.form_submit_button("Crear Asignatura", width="stretch"):
+                    if not nom.strip():
+                        st.error("El nombre es obligatorio.")
                     else:
-                        db.suspender_asignatura(mapa_activas[asig_ap], notaf)
-                        st.warning(f"Asignatura suspensa. Queda guardada en el expediente.")
-                    st.rerun()
-        else:
-            st.info("No hay asignaturas en curso para finalizar.")
+                        db.add_asignatura(nom, curso, cuatri, creditos, min_asistencia, comentarios, matricula, l_guia, l_camp, l_apun)
+                        st.rerun()
 
-    st.divider()
-    st.subheader("📋 Directorio de Asignaturas")
-    if df_asignaturas.empty:
-        st.info("Aún no tienes asignaturas registradas.")
-    else:
-        for _, asig in df_asignaturas.iterrows():
-            if asig["estado"] == "Aprobada": icono_estado = "✅"
-            elif asig["estado"] == "Suspensada": icono_estado = "❌"
-            else: icono_estado = "📘"
-            
-            badge_mat = f"⚠️ {asig['num_matricula']}ª Matrícula | " if asig["num_matricula"] > 1 else ""
-            
-            with st.expander(f"{icono_estado} {asig['nombre']} ({asig['estado']})"):
-                st.write(f"**{badge_mat}Créditos:** {asig['creditos']} ECTS | **Curso:** {asig['curso']} | **Cuatrimestre:** {asig['cuatrimestre']}")
-                tiene_comentarios = pd.notnull(asig.get('comentarios')) and str(asig.get('comentarios')).strip() != ""
-                if tiene_comentarios:
-                    st.info(f"📝 **Detalles:**\n\n{asig['comentarios']}")
+        with col_a:
+            st.subheader("🏁 Finalizar Asignatura")
+            if mapa_activas:
+                with st.form("form_ap"):
+                    asig_ap = st.selectbox("Asignatura a cerrar", list(mapa_activas.keys()))
+                    resultado = st.radio("Resultado final", ["Aprobada", "Suspensada"], horizontal=True)
+                    notaf = st.number_input("Nota Definitiva (Acta)", value=5.0, min_value=0.0, max_value=10.0, step=0.1)
+                    
+                    if st.form_submit_button("Guardar Resultado", width="stretch"):
+                        if resultado == "Aprobada":
+                            db.aprobar_asignatura(mapa_activas[asig_ap], notaf)
+                            st.success(f"¡Asignatura superada con un {notaf}!")
+                        else:
+                            db.suspender_asignatura(mapa_activas[asig_ap], notaf)
+                            st.warning(f"Asignatura suspensa. Queda guardada en el expediente.")
+                        st.rerun()
+            else:
+                st.info("No hay asignaturas en curso para finalizar.")
+                
+        # NUEVO: EDICIÓN DE ASIGNATURAS (Para poder meter enlaces a las importadas)
+        with st.expander("✏️ Editar o Eliminar Asignatura"):
+            if df_asignaturas.empty:
+                st.info("No hay asignaturas para editar.")
+            else:
+                opciones_asig = {f"{r['nombre']} (C{r['curso']} - M{r['num_matricula']})": str(r['id_asignatura']) for _, r in df_asignaturas.iterrows()}
+                sel_asig = st.selectbox("Asignatura a modificar", list(opciones_asig.keys()))
+                if sel_asig:
+                    id_as = opciones_asig[sel_asig]
+                    r_as = df_asignaturas[df_asignaturas['id_asignatura'] == id_as].iloc[0]
+                    with st.form("form_edit_asig"):
+                        e_nom = st.text_input("Nombre", value=str(r_as['nombre']))
+                        ce1, ce2, ce3 = st.columns(3)
+                        with ce1: e_cur = st.number_input("Curso", min_value=1, max_value=6, value=int(r_as['curso']))
+                        with ce2: e_cua = st.number_input("Cuatrimestre", min_value=1, max_value=3, value=int(r_as['cuatrimestre']))
+                        with ce3: e_mat = st.number_input("Matrícula", min_value=1, max_value=6, value=int(r_as['num_matricula']))
+                        
+                        ce4, ce5 = st.columns(2)
+                        with ce4: e_cred = st.number_input("Créditos ECTS", min_value=1.0, max_value=30.0, value=float(r_as['creditos']))
+                        with ce5: e_min_as = st.number_input("% Mín. Asistencia", min_value=0.0, max_value=100.0, value=float(r_as['min_asistencia_pct']))
+                        
+                        st.markdown("**Enlaces Rápidos**")
+                        cl1, cl2, cl3 = st.columns(3)
+                        with cl1: e_camp = st.text_input("Campus Virtual", value=str(r_as.get('link_campus', '')))
+                        with cl2: e_guia = st.text_input("Guía Docente", value=str(r_as.get('link_guia', '')))
+                        with cl3: e_apun = st.text_input("Apuntes", value=str(r_as.get('link_apuntes', '')))
+                        
+                        e_com = st.text_area("Detalles", value=str(r_as.get('comentarios', '')))
+                        
+                        cb1, cb2 = st.columns(2)
+                        with cb1:
+                            if st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True):
+                                db.edit_asignatura(id_as, e_nom, e_cur, e_cua, e_cred, e_min_as, e_com, e_mat, e_guia, e_camp, e_apun)
+                                st.rerun()
+                        with cb2:
+                            if st.form_submit_button("🗑️ Eliminar Asignatura", use_container_width=True):
+                                db.delete_asignatura(id_as)
+                                st.rerun()
+
+        st.divider()
+        st.subheader("📋 Directorio de Asignaturas")
+        if df_asignaturas.empty:
+            st.info("Aún no tienes asignaturas registradas.")
+        else:
+            for _, asig in df_asignaturas.iterrows():
+                if asig["estado"] == "Aprobada": 
+                    icono_estado = "✅"
+                    txt_estado = f"Aprobada: {asig['nota_final']}"
+                elif asig["estado"] == "Suspensada": 
+                    icono_estado = "❌"
+                    txt_estado = f"Suspensada: {asig['nota_final']}"
+                else: 
+                    icono_estado = "📘"
+                    txt_estado = "Cursando"
+                
+                badge_mat = f"⚠️ {asig['num_matricula']}ª Matrícula | " if asig["num_matricula"] > 1 else ""
+                
+                with st.expander(f"{icono_estado} {asig['nombre']} ({txt_estado})"):
+                    # SECCIÓN DE ENLACES RÁPIDOS
+                    links_html = []
+                    if asig.get("link_campus") and str(asig["link_campus"]).strip(): 
+                        links_html.append(f"<a href='{asig['link_campus']}' target='_blank' style='text-decoration:none;'>🌐 Campus Virtual</a>")
+                    if asig.get("link_guia") and str(asig["link_guia"]).strip(): 
+                        links_html.append(f"<a href='{asig['link_guia']}' target='_blank' style='text-decoration:none;'>📄 Guía Docente</a>")
+                    if asig.get("link_apuntes") and str(asig["link_apuntes"]).strip(): 
+                        links_html.append(f"<a href='{asig['link_apuntes']}' target='_blank' style='text-decoration:none;'>📁 Apuntes</a>")
+                    
+                    if links_html:
+                        st.markdown(" | ".join(links_html), unsafe_allow_html=True)
+                        st.markdown("") # Espacio en blanco
+                    
+                    nota_info = f"**Nota Final:** {asig['nota_final']} | " if asig["estado"] != "Cursando" else ""
+                    st.write(f"{badge_mat}{nota_info}**Créditos:** {asig['creditos']} ECTS | **Curso:** {asig['curso']} | **Cuatrimestre:** {asig['cuatrimestre']}")
+                    tiene_comentarios = pd.notnull(asig.get('comentarios')) and str(asig.get('comentarios')).strip() != ""
+                    if tiene_comentarios:
+                        st.info(f"📝 **Detalles:**\n\n{asig['comentarios']}")
+
+    with sub_extra:
+        st.subheader("🏅 Créditos Extra y Convalidaciones")
+        st.write("Añade aquí los créditos obtenidos por idiomas, deportes, torneos, cursos externos o representación estudiantil. Estos créditos suman a tu total pero no afectan a tu nota media.")
+        
+        c_ex_form, c_ex_list = st.columns([1, 1.2])
+        
+        with c_ex_form:
+            with st.form("form_extra", clear_on_submit=True):
+                desc_extra = st.text_input("Descripción (Ej: Certificado B2 Inglés)")
+                cred_extra = st.number_input("Créditos ECTS", min_value=0.5, max_value=30.0, value=3.0, step=0.5)
+                fec_extra = st.date_input("Fecha de obtención", value=datetime.now())
+                
+                if st.form_submit_button("Añadir Créditos", width="stretch"):
+                    if not desc_extra.strip():
+                        st.error("Introduce una descripción válida.")
+                    else:
+                        db.add_credito_extra(desc_extra, cred_extra, str(fec_extra))
+                        st.rerun()
+                        
+        with c_ex_list:
+            if df_creditos_extra.empty:
+                st.info("No tienes créditos extra registrados.")
+            else:
+                for _, extra in df_creditos_extra.iterrows():
+                    with st.container():
+                        c_txt, c_btn = st.columns([4, 1])
+                        with c_txt:
+                            f_str = extra['fecha']
+                            st.markdown(f"**{extra['descripcion']}**  \n*{extra['creditos']} ECTS* | 📅 {f_str}")
+                        with c_btn:
+                            if st.button("🗑️", key=f"del_ex_{extra['id_credito']}", help="Eliminar"):
+                                db.delete_credito_extra(extra['id_credito'])
+                                st.rerun()
+                        st.markdown("---")
 
 # ==============================================================================
 # TAB 7: AJUSTES Y BACKUP
