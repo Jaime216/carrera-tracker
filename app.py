@@ -7,7 +7,57 @@ import db
 import time
 
 st.set_page_config(page_title="Control Académico", page_icon="🎓", layout="wide")
+
+
+st.set_page_config(page_title="Control Académico", page_icon="🎓", layout="wide")
+
+# ==============================================================================
+# SISTEMA DE AUTENTICACIÓN SEGURO
+# ==============================================================================
+def check_password():
+    """Retorna True si el usuario ha introducido la contraseña correcta."""
+    
+    # Si ya está autenticado en la sesión, no volvemos a pedir el login
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # Contenedor aislado para centrar el formulario y evitar elementos fantasma
+    with st.container():
+        st.markdown("<br><br>", unsafe_allow_html=True) # Pequeño espacio superior
+        _, col_centro, _ = st.columns([1, 1.2, 1])
+        
+        with col_centro:
+            st.markdown("### 🔒 Acceso Restringido")
+            st.caption("Por favor, introduce tu contraseña para acceder al expediente.")
+            
+            with st.form("form_login"):
+                password_input = st.text_input("Contraseña", type="password")
+                submit_btn = st.form_submit_button("Entrar", use_container_width=True)
+                
+                if submit_btn:
+                    # Lee del secreto o usa "1234" por defecto
+                    password_correcta = st.secrets.get("PASSWORD", "1234")
+                    
+                    if password_input == password_correcta:
+                        st.session_state["password_correct"] = True
+                        st.rerun()
+                    else:
+                        st.error("❌ Contraseña incorrecta")
+
+    return False
+
+# Si no pasa el control de seguridad, detenemos la ejecución de toda la app aquí mismo
+if not check_password():
+    st.stop()
+
+# ==============================================================================
+# A PARTIR DE AQUÍ COMIENZA EL RESTO DE TU APLICACIÓN (app.py)
+# ==============================================================================
 st.title("🎓 Control de Carrera Universitaria")
+# ... (todo tu código de carga de datos, pestañas y tablas va aquí debajo)
+
+
+
 
 # ------------------------------------------------------------------------------
 # 1. CARGA Y LIMPIEZA DE DATOS (CON PARCHES PANDAS)
