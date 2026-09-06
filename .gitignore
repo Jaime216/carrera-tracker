@@ -11,3 +11,10 @@ __pycache__/
 venv/
 .venv/
 credentials.json
+
+añadir_tercero*
+*.xls
+importar_expediente*
+migrar*
+poblar*
+populate*
