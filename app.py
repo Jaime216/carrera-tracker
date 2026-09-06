@@ -388,6 +388,46 @@ with tab_dash:
 with tab_horario:
     st.subheader("🗓️ Horario de Clases (Asignaturas Activas)")
     
+    # --- CÁLCULO AUTOMÁTICO DE PARIDAD ---
+    conf_paridad = db.get_paridad_config()
+    hoy_date = date.today()
+    
+    # Cálculo de la semana actual por defecto si no está configurado
+    if conf_paridad:
+        f_inicio = datetime.strptime(conf_paridad["fecha_inicio"], "%Y-%m-%d").date()
+        tipo_ini = conf_paridad["tipo_inicial"] # "Pares" o "Impares"
+        
+        # Diferencia de semanas absolutas respecto al lunes de la semana de inicio
+        delta_dias = (hoy_date - f_inicio).days
+        num_semanas_transcurridas = delta_dias // 7
+        
+        if num_semanas_transcurridas < 0:
+            num_semanas_transcurridas = 0
+            
+        if tipo_ini == "Pares":
+            semana_actual_es_par = (num_semanas_transcurridas % 2 == 0)
+        else:
+            semana_actual_es_par = (num_semanas_transcurridas % 2 != 0)
+    else:
+        # Por defecto si no se ha configurado, usamos el número de semana ISO del año
+        semana_actual_es_par = (hoy_date.isocalendar()[1] % 2 == 0)
+
+    # Widget visual en la parte superior del horario para informar y configurar
+    col_p1, col_p2 = st.columns([2, 1])
+    with col_p1:
+        txt_sem = "🟢 Semana actual: **PAR**" if semana_actual_es_par else "🟣 Semana actual: **IMPAR**"
+        st.markdown(f"### {txt_sem} (Semana del {hoy_date.strftime('%d/%m/%Y')})")
+    with col_p2:
+        with st.expander("⚙️ Configurar Paridad"):
+            with st.form("form_paridad"):
+                f_ref = st.date_input("Lunes de referencia (Semana 1)", value=date(2026, 9, 7))
+                t_ref = st.selectbox("¿Qué tipo de semana fue esa?", ["Pares", "Impares"])
+                if st.form_submit_button("Guardar Paridad"):
+                    db.set_paridad_config(str(f_ref), t_ref)
+                    st.rerun()
+
+    st.markdown("---")
+
     if not df_horario.empty:
         if 'tipo' not in df_horario.columns:
             df_horario['tipo'] = 'Teoría'
@@ -476,17 +516,36 @@ with tab_horario:
             with cols[i]:
                 st.markdown(f"<p style='text-align:center; font-size:13px; color:#6B7280; border-bottom: 1px solid #E5E7EB; padding-bottom:5px;'>{dia}</p>", unsafe_allow_html=True)
                 if not df_horario.empty and "dia_semana" in df_horario.columns:
-                    for _, clase in df_horario[df_horario["dia_semana"] == dia].sort_values("hora_inicio").iterrows():
+                    # Filtramos y ordenamos por hora de inicio
+                    clases_dia = df_horario[df_horario["dia_semana"] == dia].sort_values("hora_inicio")
+                    
+                    for _, clase in clases_dia.iterrows():
                         id_asig = str(clase["id_asignatura"])
                         nom = mapa_nombres_rev.get(id_asig, id_asig)
                         
                         tipo_str = "🧪" if clase.get('tipo') == "Laboratorio" else "📖"
                         frec_val = clase.get('frecuencia', 'Todas')
-                        frec_str = ""
-                        if frec_val == "Pares": frec_str = " *(Pares)*"
-                        elif frec_val == "Impares": frec_str = " *(Impares)*"
                         
-                        st.markdown(f"<div style='border-left: 2px solid #9CA3AF; padding-left: 8px; margin-bottom: 14px;'><div style='font-size:10px; color:var(--text-color); opacity:0.6;'>{clase['hora_inicio']} - {clase['hora_fin']}{frec_str}</div><div style='font-size:11px; font-weight:600; color:var(--text-color); margin-top:2px;'>{tipo_str} {nom}</div></div>", unsafe_allow_html=True)
+                        # Comprobar si toca esta semana
+                        es_nuestra_semana = True
+                        if frec_val == "Pares" and not semana_actual_es_par:
+                            es_nuestra_semana = False
+                        elif frec_val == "Impares" and semana_actual_es_par:
+                            es_nuestra_semana = False
+                            
+                        opacidad = "1.0" if es_nuestra_semana else "0.3"
+                        aviso_toca = "" if es_nuestra_semana else " <i>(No hay esta semana)</i>"
+                        
+                        borde_color = "#9CA3AF"
+                        if frec_val == "Pares": borde_color = "#3B82F6"
+                        elif frec_val == "Impares": borde_color = "#8B5CF6"
+                        
+                        st.markdown(f"""
+                            <div style='border-left: 3px solid {borde_color}; padding-left: 8px; margin-bottom: 14px; opacity: {opacidad};'>
+                                <div style='font-size:10px; color:var(--text-color);'>{clase['hora_inicio']} - {clase['hora_fin']} ({frec_val}){aviso_toca}</div>
+                                <div style='font-size:11px; font-weight:600; color:var(--text-color); margin-top:2px;'>{tipo_str} {nom}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
 
 # ==============================================================================
 # TAB 3: ASISTENCIA

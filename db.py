@@ -99,13 +99,16 @@ def init_db():
             id_regla TEXT PRIMARY KEY, id_asignatura TEXT, descripcion TEXT, 
             tipo TEXT, ids_evaluaciones TEXT, valor_exigido REAL)''',
         '''CREATE TABLE IF NOT EXISTS creditos_extra (
-            id_credito TEXT PRIMARY KEY, descripcion TEXT, creditos REAL, fecha TEXT)'''
+            id_credito TEXT PRIMARY KEY, descripcion TEXT, creditos REAL, fecha TEXT)''',
+        '''CREATE TABLE IF NOT EXISTS config_paridad (
+            id TEXT PRIMARY KEY, fecha_inicio TEXT, tipo_inicial TEXT)'''
     ]
     
     for q in queries:
         try:
             execute_query(q)
-        except:
+        except Exception as e:
+            print(f"Error en init_db: {e}")
             pass
 
 init_db()
@@ -264,3 +267,23 @@ def reset_db():
     for tabla in ["asignaturas", "asistencia", "calificaciones", "horario", "entregas", "reglas", "creditos_extra"]:
         try: execute_query(f"DELETE FROM {tabla}")
         except: pass
+
+# ------------------------------------------------------------------------------
+# CONFIGURACIÓN DE PARIDAD DE SEMANAS
+# ------------------------------------------------------------------------------
+def set_paridad_config(fecha_inicio: str, tipo_inicial: str):
+    execute_query("DELETE FROM config_paridad")
+    execute_query("INSERT INTO config_paridad VALUES ('1', ?, ?)", (fecha_inicio, tipo_inicial))
+    return True
+
+def get_paridad_config():
+    try:
+        df = get_table("config_paridad")
+        if not df.empty:
+            return {
+                "fecha_inicio": str(df.iloc[0]["fecha_inicio"]),
+                "tipo_inicial": str(df.iloc[0]["tipo_inicial"])
+            }
+    except:
+        pass
+    return None
