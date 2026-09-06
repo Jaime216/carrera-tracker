@@ -2,22 +2,17 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import calendar
-from datetime import datetime, date
+import datetime
+from datetime import date
 import db
 import time
-import datetime
 
 st.set_page_config(page_title="Control Académico", page_icon="🎓", layout="wide")
 
-# ==============================================================================
-# SISTEMA DE AUTENTICACIÓN SEGURO (MÉTODO NATIVO URL)
-# ==============================================================================
 def check_password():
-    # 1. Comprobar si el navegador ya tiene el token en la URL (sobrevive al F5)
     if st.query_params.get("auth") == "true":
         return True
         
-    # 2. Comprobar sesión actual
     if st.session_state.get("password_correct", False):
         return True
 
@@ -37,10 +32,7 @@ def check_password():
                     password_correcta = st.secrets.get("PASSWORD", "1234")
                     
                     if password_input == password_correcta:
-                        # Autenticar en la sesión
                         st.session_state["password_correct"] = True
-                        
-                        # TRUCO NATIVO: Guardar el estado en la URL para el F5
                         st.query_params["auth"] = "true"
                         st.rerun()
                     else:
@@ -48,32 +40,34 @@ def check_password():
 
     return False
 
-# Si no pasa el control de seguridad, detenemos la ejecución de toda la app
 if not check_password():
     st.stop()
 
-# ==============================================================================
-# A PARTIR DE AQUÍ COMIENZA EL RESTO DE TU APLICACIÓN (app.py)
-# ==============================================================================
 st.title("🎓 Control de Carrera Universitaria")
 
-# ------------------------------------------------------------------------------
-# 1. CARGA Y LIMPIEZA DE DATOS (CON PARCHES PANDAS)
-# ------------------------------------------------------------------------------
-try:
-    df_asignaturas = db.get_table("asignaturas")
-    df_asistencia = db.get_table("asistencia")
-    df_notas = db.get_table("calificaciones")
-    df_horario = db.get_table("horario")
-    try: df_entregas = db.get_table("entregas")
-    except: df_entregas = pd.DataFrame()
-    try: df_reglas = db.get_table("reglas")
-    except: df_reglas = pd.DataFrame()
-    try: df_creditos_extra = db.get_table("creditos_extra")
-    except: df_creditos_extra = pd.DataFrame()
-except Exception as e:
-    st.error(f"❌ Error al cargar la base de datos: {e}")
-    st.stop()
+@st.cache_data
+def cargar_datos_bd():
+    try:
+        df_asig = db.get_table("asignaturas")
+        df_asis = db.get_table("asistencia")
+        df_not = db.get_table("calificaciones")
+        df_hor = db.get_table("horario")
+        try: df_ent = db.get_table("entregas")
+        except: df_ent = pd.DataFrame()
+        try: df_reg = db.get_table("reglas")
+        except: df_reg = pd.DataFrame()
+        try: df_ce = db.get_table("creditos_extra")
+        except: df_ce = pd.DataFrame()
+        return df_asig, df_asis, df_not, df_hor, df_ent, df_reg, df_ce
+    except Exception as e:
+        st.error(f"❌ Error al cargar la base de datos: {e}")
+        st.stop()
+
+df_asignaturas, df_asistencia, df_notas, df_horario, df_entregas, df_reglas, df_creditos_extra = cargar_datos_bd()
+
+def aplicar_cambios():
+    cargar_datos_bd.clear()
+    st.rerun()
 
 hay_asignaturas = False
 mapa_asignaturas = {}
@@ -156,16 +150,11 @@ if not df_entregas.empty:
     if "completada" not in df_entregas.columns: df_entregas["completada"] = 0
     df_entregas["completada"] = pd.to_numeric(df_entregas["completada"], errors="coerce").fillna(0).astype(int)
 
-# ------------------------------------------------------------------------------
-# 2. PESTAÑAS DE LA APLICACIÓN
-# ------------------------------------------------------------------------------
 tab_dash, tab_horario, tab_asis, tab_eval, tab_entregas, tab_asig, tab_ajustes = st.tabs([
     "📈 Dashboard", "🕒 Horario", "📝 Asistencia", "📊 Calificaciones", "📌 Entregas", "📚 Asignaturas", "⚙️ Ajustes"
 ])
 
-# ==============================================================================
-# TAB 1: DASHBOARD
-# ==============================================================================
+# --- DASHBOARD ---
 with tab_dash:
     if not hay_asignaturas:
         st.info("Crea primero tus asignaturas en la pestaña **📚 Asignaturas**.")
@@ -380,13 +369,10 @@ with tab_dash:
             if not hay_eventos:
                 st.caption("No hay actividad en el mes seleccionado.")
 
-# ==============================================================================
-# TAB 2: HORARIO
-# ==============================================================================
+# --- HORARIO ---
 with tab_horario:
     st.subheader("🗓️ Horario de Clases")
     
-    # --- CÁLCULO AUTOMÁTICO DE PARIDAD ---
     conf_paridad = db.get_paridad_config()
     hoy_date = date.today()
     
@@ -402,13 +388,11 @@ with tab_horario:
     else:
         semana_actual_es_par = (hoy_date.isocalendar()[1] % 2 == 0)
 
-    # --- CONTROLES SUPERIORES ---
     col_p1, col_p2, col_p3 = st.columns([2, 1, 1])
     with col_p1:
         txt_sem = "🟢 Semana actual: **PAR**" if semana_actual_es_par else "🟣 Semana actual: **IMPAR**"
         st.markdown(f"### {txt_sem} (Semana del {hoy_date.strftime('%d/%m/%Y')})")
     with col_p2:
-        # Toggle para alternar el grid entre Mañana y Tarde
         turno_grid = st.radio("Turno a mostrar", ["Mañana", "Tarde"], horizontal=True)
     with col_p3:
         with st.expander("⚙️ Config. Paridad"):
@@ -417,10 +401,8 @@ with tab_horario:
                 t_ref = st.selectbox("¿Qué tipo fue?", ["Pares", "Impares"])
                 if st.form_submit_button("Guardar"):
                     db.set_paridad_config(str(f_ref), t_ref)
-                    st.rerun()
+                    aplicar_cambios()
 
-    # --- DEFINICIÓN DE FRANJAS ---
-    # Unificamos todas en una lista clara para los selectores de los formularios
     opciones_franjas = [
         "08:30 - 10:20 (Mañana 1)", "10:40 - 12:30 (Mañana 2)", "12:40 - 14:30 (Mañana 3)",
         "15:30 - 17:20 (Tarde 1)", "17:40 - 19:30 (Tarde 2)", "19:40 - 21:30 (Tarde 3)"
@@ -429,7 +411,6 @@ with tab_horario:
     if not mapa_activas:
         st.info("No tienes asignaturas 'En curso'.")
     else:
-        # --- AÑADIR CLASE ---
         with st.expander("➕ Añadir clase al horario"):
             with st.form("form_horario", clear_on_submit=True):
                 c1, c2 = st.columns(2)
@@ -442,14 +423,12 @@ with tab_horario:
                     h_frec = st.selectbox("Frecuencia", ["Todas las semanas", "Semanas pares", "Semanas impares"])
                 
                 if st.form_submit_button("Añadir al horario", use_container_width=True):
-                    # Extraemos las horas exactas del string (ej: de "08:30 - 10:20 (Mañana 1)" sacamos "08:30" y "10:20")
                     h_ini = h_franja_sel[0:5]
                     h_fin = h_franja_sel[8:13]
                     frec_db = "Todas" if h_frec == "Todas las semanas" else ("Pares" if h_frec == "Semanas pares" else "Impares")
                     db.add_horario(mapa_activas[h_asig], h_dia, h_ini, h_fin, h_tipo, frec_db)
-                    st.rerun()
+                    aplicar_cambios()
                     
-        # --- EDITAR CLASE ---
         with st.expander("✏️ Editar o Eliminar clase existente"):
             if df_horario.empty:
                 st.info("El horario está vacío.")
@@ -485,7 +464,6 @@ with tab_horario:
                                 e_dia = st.selectbox("Día", dias_validos, index=idx_dia)
                                 e_tipo = st.radio("Tipo de clase", ["Teoría", "Laboratorio"], index=idx_tipo_h, horizontal=True)
                             with c2: 
-                                # Encontrar el índice del selector basándonos en la hora antigua
                                 franja_str_busqueda = f"{r_h['hora_inicio']} - {r_h['hora_fin']}"
                                 idx_franja = 0
                                 for idx, f_op in enumerate(opciones_franjas):
@@ -503,23 +481,19 @@ with tab_horario:
                                     e_fin = e_franja_sel[8:13]
                                     frec_db = "Todas" if e_frec == "Todas las semanas" else ("Pares" if e_frec == "Semanas pares" else "Impares")
                                     db.edit_horario(id_h, e_dia, e_ini, e_fin, e_tipo, frec_db)
-                                    st.rerun()
+                                    aplicar_cambios()
                             with c_btn2:
                                 if st.form_submit_button("🗑️ Eliminar Clase", use_container_width=True):
                                     db.delete_horario(id_h)
-                                    st.rerun()
+                                    aplicar_cambios()
 
         st.divider()
         
-        # ======================================================================
-        # RENDERIZADO DEL GRID HORARIO MATRICIAL (MAÑANA O TARDE)
-        # ======================================================================
         dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
         
         franjas_manana = [("08:30", "10:20"), ("10:40", "12:30"), ("12:40", "14:30")]
         franjas_tarde = [("15:30", "17:20"), ("17:40", "19:30"), ("19:40", "21:30")]
         
-        # Seleccionar las franjas a renderizar según el radio button elegido arriba
         franjas_actuales = franjas_manana if turno_grid == "Mañana" else franjas_tarde
         
         cols_cabecera = st.columns([1, 2, 2, 2, 2, 2])
@@ -572,9 +546,7 @@ with tab_horario:
                             """, unsafe_allow_html=True)
 
 
-# ==============================================================================
-# TAB 3: ASISTENCIA
-# ==============================================================================
+# --- ASISTENCIA ---
 with tab_asis:
     st.subheader("Marcar Asistencia")
     if mapa_activas:
@@ -589,7 +561,7 @@ with tab_asis:
                 obs = st.text_input("Observaciones")
             if st.form_submit_button("Guardar", width="stretch"):
                 db.add_asistencia(mapa_activas[asig_sel], estado, obs, str(fecha), tipo_clase)
-                st.rerun()
+                aplicar_cambios()
 
         with st.expander("✏️ Editar o Eliminar registro existente"):
             if df_asistencia.empty:
@@ -629,15 +601,13 @@ with tab_asis:
                             with c_btn1:
                                 if st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True):
                                     db.edit_asistencia(id_a, e_est, e_obs, str(e_fec), e_tipo)
-                                    st.rerun()
+                                    aplicar_cambios()
                             with c_btn2:
                                 if st.form_submit_button("🗑️ Eliminar Registro", use_container_width=True):
                                     db.delete_asistencia(id_a)
-                                    st.rerun()
+                                    aplicar_cambios()
 
-# ==============================================================================
-# TAB 4: CALIFICACIONES Y SIMULADOR
-# ==============================================================================
+# --- CALIFICACIONES Y SIMULADOR ---
 with tab_eval:
     st.subheader("Gestión de Evaluaciones y Exámenes")
     if not mapa_activas:
@@ -671,7 +641,7 @@ with tab_eval:
                         st.error("Introduce un concepto.")
                     else:
                         db.add_calificacion(mapa_activas[asig_nota], concepto, ponderacion, nota, str(fecha_eval), "Realizado", tipo_eval, nota_minima)
-                        st.rerun()
+                        aplicar_cambios()
 
         elif modo_eval == "📅 Planificar futuro":
             with st.form("form_plan", clear_on_submit=True):
@@ -692,7 +662,7 @@ with tab_eval:
                         st.error("Introduce un concepto.")
                     else:
                         db.add_calificacion(mapa_activas[asig_plan], concepto, ponderacion, None, str(fecha_plan), "Pendiente", tipo_eval, nota_minima)
-                        st.rerun()
+                        aplicar_cambios()
 
         elif modo_eval == "✅ Poner nota a pendiente":
             df_pendientes = df_notas[df_notas["estado"] == "Pendiente"] if not df_notas.empty else pd.DataFrame()
@@ -711,7 +681,7 @@ with tab_eval:
                     nueva_nota = st.number_input("Nota obtenida (0 - 10)", min_value=0.0, max_value=10.0, step=0.1, value=5.0)
                     if st.form_submit_button("Guardar Nota Definitiva", width="stretch"):
                         db.update_calificacion(opciones_pendientes[eval_sel], nueva_nota)
-                        st.rerun()
+                        aplicar_cambios()
 
         elif modo_eval == "⚙️ Reglas Especiales":
             c_form, c_lista = st.columns([1.2, 1])
@@ -737,7 +707,7 @@ with tab_eval:
                             st.error("Debes seleccionar al menos un examen.")
                         else:
                             db.add_regla(id_asig_reg, desc_regla, "Media Mínima", ids_seleccionados, val_regla)
-                            st.rerun()
+                            aplicar_cambios()
             with c_lista:
                 if not df_reglas.empty:
                     for _, regla in df_reglas.iterrows():
@@ -751,7 +721,7 @@ with tab_eval:
                             st.write("Aplica a:", ", ".join(nombres_impl))
                             if st.button("🗑️ Eliminar", key=f"del_r_{regla['id_regla']}"):
                                 db.delete_regla(regla["id_regla"])
-                                st.rerun()
+                                aplicar_cambios()
 
         st.divider()
         with st.expander("✏️ Editar o Eliminar evaluación individual"):
@@ -795,11 +765,11 @@ with tab_eval:
                             with c_btn1:
                                 if st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True):
                                     db.edit_calificacion(id_c, e_con, e_pond, e_nota, str(e_fec), e_tipo, e_min)
-                                    st.rerun()
+                                    aplicar_cambios()
                             with c_btn2:
                                 if st.form_submit_button("🗑️ Eliminar Evaluación", use_container_width=True):
                                     db.delete_calificacion(id_c)
-                                    st.rerun()
+                                    aplicar_cambios()
 
         st.divider()
         st.subheader("🧮 Simulador de Notas (Previsión Múltiple)")
@@ -933,9 +903,7 @@ with tab_eval:
                     else:
                         st.info(f"🎯 Necesitas sacar al menos un **{round(nota_necesaria, 2)}** en '{target_key}' para llegar a tu objetivo de {nota_obj} final.")
 
-# ==============================================================================
-# TAB 5: ENTREGAS
-# ==============================================================================
+# --- ENTREGAS ---
 with tab_entregas:
     st.subheader("📌 Gestor de Entregas y Tareas")
     if not mapa_activas:
@@ -957,7 +925,7 @@ with tab_entregas:
                     else:
                         pond_final = float(peso_ent) if cuenta_nota else None
                         db.add_entrega(mapa_activas[asig_ent], desc_ent, str(fecha_ent), pond_final)
-                        st.rerun()
+                        aplicar_cambios()
 
         with col_lista:
             st.markdown("#### Tareas Pendientes")
@@ -978,7 +946,7 @@ with tab_entregas:
                         with c1:
                             if st.button("⬜", key=f"btn_p_{row['id_entrega']}", help="Marcar como completada"):
                                 db.toggle_entrega(row['id_entrega'], 1)
-                                st.rerun()
+                                aplicar_cambios()
                         with c2:
                             st.markdown(f"**{asig_nom}**: {row['descripcion']} - 📅 {fecha_txt}  {peso_txt}")
                 
@@ -990,7 +958,7 @@ with tab_entregas:
                             with c1:
                                 if st.button("✅", key=f"btn_c_{row['id_entrega']}", help="Marcar como pendiente"):
                                     db.toggle_entrega(row['id_entrega'], 0)
-                                    st.rerun()
+                                    aplicar_cambios()
                             with c2:
                                 st.markdown(f"~~{asig_nom}: {row['descripcion']}~~")
                         
@@ -1030,15 +998,13 @@ with tab_entregas:
                             with c_btn1:
                                 if st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True):
                                     db.edit_entrega(id_e, e_desc, str(e_fec), float(e_pond) if e_cuenta else None)
-                                    st.rerun()
+                                    aplicar_cambios()
                             with c_btn2:
                                 if st.form_submit_button("🗑️ Eliminar Tarea", use_container_width=True):
                                     db.delete_entrega(id_e)
-                                    st.rerun()
+                                    aplicar_cambios()
 
-# ==============================================================================
-# TAB 6: ASIGNATURAS Y ENLACES
-# ==============================================================================
+# --- ASIGNATURAS Y ENLACES ---
 with tab_asig:
     sub_asig, sub_extra = st.tabs(["📚 Asignaturas", "🏅 Convalidaciones y Extra"])
 
@@ -1071,7 +1037,7 @@ with tab_asig:
                         st.error("El nombre es obligatorio.")
                     else:
                         db.add_asignatura(nom, curso, cuatri, creditos, min_asistencia, comentarios, matricula, l_guia, l_camp, l_apun)
-                        st.rerun()
+                        aplicar_cambios()
 
         with col_a:
             st.subheader("🏁 Finalizar Asignatura")
@@ -1088,11 +1054,10 @@ with tab_asig:
                         else:
                             db.suspender_asignatura(mapa_activas[asig_ap], notaf)
                             st.warning(f"Asignatura suspensa. Queda guardada en el expediente.")
-                        st.rerun()
+                        aplicar_cambios()
             else:
                 st.info("No hay asignaturas en curso para finalizar.")
                 
-        # NUEVO: EDICIÓN DE ASIGNATURAS (Para poder meter enlaces a las importadas)
         with st.expander("✏️ Editar o Eliminar Asignatura"):
             if df_asignaturas.empty:
                 st.info("No hay asignaturas para editar.")
@@ -1125,11 +1090,11 @@ with tab_asig:
                         with cb1:
                             if st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True):
                                 db.edit_asignatura(id_as, e_nom, e_cur, e_cua, e_cred, e_min_as, e_com, e_mat, e_guia, e_camp, e_apun)
-                                st.rerun()
+                                aplicar_cambios()
                         with cb2:
                             if st.form_submit_button("🗑️ Eliminar Asignatura", use_container_width=True):
                                 db.delete_asignatura(id_as)
-                                st.rerun()
+                                aplicar_cambios()
 
         st.divider()
         st.subheader("📋 Directorio de Asignaturas")
@@ -1150,7 +1115,6 @@ with tab_asig:
                 badge_mat = f"⚠️ {asig['num_matricula']}ª Matrícula | " if asig["num_matricula"] > 1 else ""
                 
                 with st.expander(f"{icono_estado} {asig['nombre']} ({txt_estado})"):
-                    # SECCIÓN DE ENLACES RÁPIDOS
                     links_html = []
                     if asig.get("link_campus") and str(asig["link_campus"]).strip(): 
                         links_html.append(f"<a href='{asig['link_campus']}' target='_blank' style='text-decoration:none;'>🌐 Campus Virtual</a>")
@@ -1161,7 +1125,7 @@ with tab_asig:
                     
                     if links_html:
                         st.markdown(" | ".join(links_html), unsafe_allow_html=True)
-                        st.markdown("") # Espacio en blanco
+                        st.markdown("")
                     
                     nota_info = f"**Nota Final:** {asig['nota_final']} | " if asig["estado"] != "Cursando" else ""
                     st.write(f"{badge_mat}{nota_info}**Créditos:** {asig['creditos']} ECTS | **Curso:** {asig['curso']} | **Cuatrimestre:** {asig['cuatrimestre']}")
@@ -1186,7 +1150,7 @@ with tab_asig:
                         st.error("Introduce una descripción válida.")
                     else:
                         db.add_credito_extra(desc_extra, cred_extra, str(fec_extra))
-                        st.rerun()
+                        aplicar_cambios()
                         
         with c_ex_list:
             if df_creditos_extra.empty:
@@ -1201,12 +1165,10 @@ with tab_asig:
                         with c_btn:
                             if st.button("🗑️", key=f"del_ex_{extra['id_credito']}", help="Eliminar"):
                                 db.delete_credito_extra(extra['id_credito'])
-                                st.rerun()
+                                aplicar_cambios()
                         st.markdown("---")
 
-# ==============================================================================
-# TAB 7: AJUSTES Y BACKUP
-# ==============================================================================
+# --- AJUSTES Y BACKUP ---
 with tab_ajustes:
     st.subheader("⚙️ Ajustes y Copias de Seguridad")
     st.write("Gestiona la base de datos de tu aplicación de forma local y segura.")
@@ -1242,6 +1204,6 @@ with tab_ajustes:
                         f.write(uploaded_file.getbuffer())
                     st.success("¡Base de datos restaurada con éxito! Recargando...")
                     time.sleep(1)
-                    st.rerun()
+                    aplicar_cambios()
                 except Exception as e:
                     st.error(f"Error al restaurar la base de datos: {e}")

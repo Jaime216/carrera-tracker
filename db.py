@@ -5,29 +5,23 @@ import streamlit as st
 import sqlite3
 import requests
 
-# ------------------------------------------------------------------------------
-# CONEXIÓN A TURSO (Vía API HTTP)
-# ------------------------------------------------------------------------------
 TURSO_URL = st.secrets["TURSO_URL"].replace("libsql://", "https://")
 TURSO_AUTH_TOKEN = st.secrets["TURSO_AUTH_TOKEN"]
-
-DB_FILE = "carrera.db" # Lo mantenemos por compatibilidad con app.py
+DB_FILE = "carrera.db"
 
 def execute_query(query, params=None):
-    """Ejecuta una consulta SQL en Turso a través de su API HTTP."""
     headers = {
         "Authorization": f"Bearer {TURSO_AUTH_TOKEN}",
         "Content-Type": "application/json"
     }
     
-    # Formatear parámetros para la API de Turso
     args = []
     if params:
         for p in params:
             if isinstance(p, float):
-                args.append({"type": "float", "value": p})  # <-- SIN EL str()
+                args.append({"type": "float", "value": p})
             elif isinstance(p, int):
-                args.append({"type": "integer", "value": str(p)}) # Turso requiere los integers como texto para evitar desbordamientos, pero los floats como número
+                args.append({"type": "integer", "value": str(p)})
             elif p is None:
                 args.append({"type": "null"})
             else:
@@ -77,7 +71,6 @@ def get_table(table_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 def init_db():
-    """Inicializa las tablas de la base de datos en Turso si no existen."""
     queries = [
         '''CREATE TABLE IF NOT EXISTS asignaturas (
             id_asignatura TEXT PRIMARY KEY, nombre TEXT, curso INTEGER, 
@@ -119,17 +112,14 @@ def init_db():
             print(f"Error inicializando tabla: {e}")
             pass
             
-    # TRUCO MÁGICO: Actualizar la tabla existente en Turso si no tenía la columna 'aula'
     try:
         execute_query("ALTER TABLE horario ADD COLUMN aula TEXT")
     except:
-        pass # Si la columna ya existe, fallará silenciosamente y no pasará nada
+        pass
 
 init_db()
 
-# ------------------------------------------------------------------------------
-# ASISTENCIA
-# ------------------------------------------------------------------------------
+# --- ASISTENCIA ---
 def add_asistencia(id_asignatura: str, estado: str, observaciones: str = "", fecha: str = None, tipo: str = "Teoría"):
     fecha_str = fecha if fecha else datetime.now().strftime("%Y-%m-%d")
     id_registro = str(uuid.uuid4())[:8]
@@ -146,9 +136,7 @@ def delete_asistencia(id_registro: str):
     execute_query("DELETE FROM asistencia WHERE id_registro = ?", (id_registro,))
     return True
 
-# ------------------------------------------------------------------------------
-# CALIFICACIONES
-# ------------------------------------------------------------------------------
+# --- CALIFICACIONES ---
 def add_calificacion(id_asignatura: str, concepto: str, ponderacion: float, nota: float = None, fecha: str = None, estado: str = "Realizado", tipo: str = "Teoría", nota_minima: float = 0.0):
     fecha_str = fecha if fecha else datetime.now().strftime("%Y-%m-%d")
     id_eval = str(uuid.uuid4())[:8]
@@ -170,9 +158,7 @@ def delete_calificacion(id_evaluacion: str):
     execute_query("DELETE FROM calificaciones WHERE id_evaluacion = ?", (id_evaluacion,))
     return True
 
-# ------------------------------------------------------------------------------
-# ASIGNATURAS Y EXPEDIENTE
-# ------------------------------------------------------------------------------
+# --- ASIGNATURAS Y EXPEDIENTE ---
 def add_asignatura(nombre: str, curso: int, cuatrimestre: int, creditos: float, min_asistencia_pct: float, comentarios: str = "", num_matricula: int = 1, link_guia: str = "", link_campus: str = "", link_apuntes: str = ""):
     df_existentes = get_table("asignaturas")
     siguiente = 1
@@ -213,9 +199,7 @@ def suspender_asignatura(id_asignatura: str, nota_final: float):
                   (nota_final, id_asignatura))
     return True
 
-# ------------------------------------------------------------------------------
-# HORARIO
-# ------------------------------------------------------------------------------
+# --- HORARIO ---
 def add_horario(id_asignatura: str, dia: str, inicio: str, fin: str, tipo: str = "Teoría", frecuencia: str = "Todas"):
     id_hor = str(uuid.uuid4())[:8]
     execute_query("INSERT INTO horario (id_horario, id_asignatura, dia_semana, hora_inicio, hora_fin, tipo, frecuencia) VALUES (?, ?, ?, ?, ?, ?, ?)", 
@@ -231,9 +215,7 @@ def delete_horario(id_horario: str):
     execute_query("DELETE FROM horario WHERE id_horario = ?", (id_horario,))
     return True
 
-# ------------------------------------------------------------------------------
-# ENTREGAS
-# ------------------------------------------------------------------------------
+# --- ENTREGAS ---
 def add_entrega(id_asignatura: str, descripcion: str, fecha_limite: str, ponderacion: float = None):
     id_ent = str(uuid.uuid4())[:8]
     execute_query("INSERT INTO entregas VALUES (?, ?, ?, ?, ?, ?)", 
@@ -254,9 +236,7 @@ def delete_entrega(id_entrega: str):
     execute_query("DELETE FROM entregas WHERE id_entrega = ?", (id_entrega,))
     return True
 
-# ------------------------------------------------------------------------------
-# REGLAS Y CRÉDITOS EXTRA
-# ------------------------------------------------------------------------------
+# --- REGLAS Y CRÉDITOS EXTRA ---
 def add_regla(id_asignatura: str, descripcion: str, tipo: str, ids_evaluaciones: str, valor_exigido: float):
     id_regla = str(uuid.uuid4())[:8]
     execute_query("INSERT INTO reglas VALUES (?, ?, ?, ?, ?, ?)", 
@@ -282,9 +262,7 @@ def reset_db():
         try: execute_query(f"DELETE FROM {tabla}")
         except: pass
 
-# ------------------------------------------------------------------------------
-# CONFIGURACIÓN DE PARIDAD DE SEMANAS
-# ------------------------------------------------------------------------------
+# --- CONFIGURACIÓN DE PARIDAD DE SEMANAS ---
 def set_paridad_config(fecha_inicio: str, tipo_inicial: str):
     execute_query("DELETE FROM config_paridad")
     execute_query("INSERT INTO config_paridad VALUES ('1', ?, ?)", (fecha_inicio, tipo_inicial))
