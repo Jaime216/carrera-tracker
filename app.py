@@ -5,25 +5,24 @@ import calendar
 from datetime import datetime, date
 import db
 import time
-
-st.set_page_config(page_title="Control Académico", page_icon="🎓", layout="wide")
-
+import datetime
 
 st.set_page_config(page_title="Control Académico", page_icon="🎓", layout="wide")
 
 # ==============================================================================
-# SISTEMA DE AUTENTICACIÓN SEGURO
+# SISTEMA DE AUTENTICACIÓN SEGURO (MÉTODO NATIVO URL)
 # ==============================================================================
 def check_password():
-    """Retorna True si el usuario ha introducido la contraseña correcta."""
-    
-    # Si ya está autenticado en la sesión, no volvemos a pedir el login
+    # 1. Comprobar si el navegador ya tiene el token en la URL (sobrevive al F5)
+    if st.query_params.get("auth") == "true":
+        return True
+        
+    # 2. Comprobar sesión actual
     if st.session_state.get("password_correct", False):
         return True
 
-    # Contenedor aislado para centrar el formulario y evitar elementos fantasma
     with st.container():
-        st.markdown("<br><br>", unsafe_allow_html=True) # Pequeño espacio superior
+        st.markdown("<br><br>", unsafe_allow_html=True)
         _, col_centro, _ = st.columns([1, 1.2, 1])
         
         with col_centro:
@@ -35,18 +34,21 @@ def check_password():
                 submit_btn = st.form_submit_button("Entrar", use_container_width=True)
                 
                 if submit_btn:
-                    # Lee del secreto o usa "1234" por defecto
                     password_correcta = st.secrets.get("PASSWORD", "1234")
                     
                     if password_input == password_correcta:
+                        # Autenticar en la sesión
                         st.session_state["password_correct"] = True
+                        
+                        # TRUCO NATIVO: Guardar el estado en la URL para el F5
+                        st.query_params["auth"] = "true"
                         st.rerun()
                     else:
                         st.error("❌ Contraseña incorrecta")
 
     return False
 
-# Si no pasa el control de seguridad, detenemos la ejecución de toda la app aquí mismo
+# Si no pasa el control de seguridad, detenemos la ejecución de toda la app
 if not check_password():
     st.stop()
 
@@ -54,10 +56,6 @@ if not check_password():
 # A PARTIR DE AQUÍ COMIENZA EL RESTO DE TU APLICACIÓN (app.py)
 # ==============================================================================
 st.title("🎓 Control de Carrera Universitaria")
-# ... (todo tu código de carga de datos, pestañas y tablas va aquí debajo)
-
-
-
 
 # ------------------------------------------------------------------------------
 # 1. CARGA Y LIMPIEZA DE DATOS (CON PARCHES PANDAS)
@@ -386,60 +384,52 @@ with tab_dash:
 # TAB 2: HORARIO
 # ==============================================================================
 with tab_horario:
-    st.subheader("🗓️ Horario de Clases (Asignaturas Activas)")
+    st.subheader("🗓️ Horario de Clases")
     
     # --- CÁLCULO AUTOMÁTICO DE PARIDAD ---
     conf_paridad = db.get_paridad_config()
     hoy_date = date.today()
     
-    # Cálculo de la semana actual por defecto si no está configurado
     if conf_paridad:
-        f_inicio = datetime.strptime(conf_paridad["fecha_inicio"], "%Y-%m-%d").date()
-        tipo_ini = conf_paridad["tipo_inicial"] # "Pares" o "Impares"
-        
-        # Diferencia de semanas absolutas respecto al lunes de la semana de inicio
+        f_inicio = datetime.datetime.strptime(conf_paridad["fecha_inicio"], "%Y-%m-%d").date()
+        tipo_ini = conf_paridad["tipo_inicial"]
         delta_dias = (hoy_date - f_inicio).days
-        num_semanas_transcurridas = delta_dias // 7
-        
-        if num_semanas_transcurridas < 0:
-            num_semanas_transcurridas = 0
-            
+        num_semanas_transcurridas = max(0, delta_dias // 7)
         if tipo_ini == "Pares":
             semana_actual_es_par = (num_semanas_transcurridas % 2 == 0)
         else:
             semana_actual_es_par = (num_semanas_transcurridas % 2 != 0)
     else:
-        # Por defecto si no se ha configurado, usamos el número de semana ISO del año
         semana_actual_es_par = (hoy_date.isocalendar()[1] % 2 == 0)
 
-    # Widget visual en la parte superior del horario para informar y configurar
-    col_p1, col_p2 = st.columns([2, 1])
+    # --- CONTROLES SUPERIORES ---
+    col_p1, col_p2, col_p3 = st.columns([2, 1, 1])
     with col_p1:
         txt_sem = "🟢 Semana actual: **PAR**" if semana_actual_es_par else "🟣 Semana actual: **IMPAR**"
         st.markdown(f"### {txt_sem} (Semana del {hoy_date.strftime('%d/%m/%Y')})")
     with col_p2:
-        with st.expander("⚙️ Configurar Paridad"):
+        # Toggle para alternar el grid entre Mañana y Tarde
+        turno_grid = st.radio("Turno a mostrar", ["Mañana", "Tarde"], horizontal=True)
+    with col_p3:
+        with st.expander("⚙️ Config. Paridad"):
             with st.form("form_paridad"):
-                f_ref = st.date_input("Lunes de referencia (Semana 1)", value=date(2026, 9, 7))
-                t_ref = st.selectbox("¿Qué tipo de semana fue esa?", ["Pares", "Impares"])
-                if st.form_submit_button("Guardar Paridad"):
+                f_ref = st.date_input("Lunes Semana 1", value=date(2026, 9, 7))
+                t_ref = st.selectbox("¿Qué tipo fue?", ["Pares", "Impares"])
+                if st.form_submit_button("Guardar"):
                     db.set_paridad_config(str(f_ref), t_ref)
                     st.rerun()
 
-    st.markdown("---")
+    # --- DEFINICIÓN DE FRANJAS ---
+    # Unificamos todas en una lista clara para los selectores de los formularios
+    opciones_franjas = [
+        "08:30 - 10:20 (Mañana 1)", "10:40 - 12:30 (Mañana 2)", "12:40 - 14:30 (Mañana 3)",
+        "15:30 - 17:20 (Tarde 1)", "17:40 - 19:30 (Tarde 2)", "19:40 - 21:30 (Tarde 3)"
+    ]
 
-    if not df_horario.empty:
-        if 'tipo' not in df_horario.columns:
-            df_horario['tipo'] = 'Teoría'
-        df_horario['tipo'] = df_horario['tipo'].fillna('Teoría')
-        
-        if 'frecuencia' not in df_horario.columns:
-            df_horario['frecuencia'] = 'Todas'
-        df_horario['frecuencia'] = df_horario['frecuencia'].fillna('Todas')
-        
     if not mapa_activas:
         st.info("No tienes asignaturas 'En curso'.")
     else:
+        # --- AÑADIR CLASE ---
         with st.expander("➕ Añadir clase al horario"):
             with st.form("form_horario", clear_on_submit=True):
                 c1, c2 = st.columns(2)
@@ -448,16 +438,18 @@ with tab_horario:
                     h_dia = st.selectbox("Día", ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"])
                     h_tipo = st.radio("Tipo de clase", ["Teoría", "Laboratorio"], horizontal=True)
                 with c2: 
-                    c_h1, c_h2 = st.columns(2)
-                    with c_h1: h_ini = st.time_input("Hora Inicio", value=pd.to_datetime("09:00").time())
-                    with c_h2: h_fin = st.time_input("Hora Fin", value=pd.to_datetime("11:00").time())
+                    h_franja_sel = st.selectbox("Franja Horaria", opciones_franjas)
                     h_frec = st.selectbox("Frecuencia", ["Todas las semanas", "Semanas pares", "Semanas impares"])
                 
-                if st.form_submit_button("Añadir al horario", width="stretch"):
+                if st.form_submit_button("Añadir al horario", use_container_width=True):
+                    # Extraemos las horas exactas del string (ej: de "08:30 - 10:20 (Mañana 1)" sacamos "08:30" y "10:20")
+                    h_ini = h_franja_sel[0:5]
+                    h_fin = h_franja_sel[8:13]
                     frec_db = "Todas" if h_frec == "Todas las semanas" else ("Pares" if h_frec == "Semanas pares" else "Impares")
-                    db.add_horario(mapa_activas[h_asig], h_dia, h_ini.strftime("%H:%M"), h_fin.strftime("%H:%M"), h_tipo, frec_db)
+                    db.add_horario(mapa_activas[h_asig], h_dia, h_ini, h_fin, h_tipo, frec_db)
                     st.rerun()
                     
+        # --- EDITAR CLASE ---
         with st.expander("✏️ Editar o Eliminar clase existente"):
             if df_horario.empty:
                 st.info("El horario está vacío.")
@@ -493,16 +485,24 @@ with tab_horario:
                                 e_dia = st.selectbox("Día", dias_validos, index=idx_dia)
                                 e_tipo = st.radio("Tipo de clase", ["Teoría", "Laboratorio"], index=idx_tipo_h, horizontal=True)
                             with c2: 
-                                c_e1, c_e2 = st.columns(2)
-                                with c_e1: e_ini = st.time_input("Hora Inicio", value=pd.to_datetime(r_h['hora_inicio']).time())
-                                with c_e2: e_fin = st.time_input("Hora Fin", value=pd.to_datetime(r_h['hora_fin']).time())
+                                # Encontrar el índice del selector basándonos en la hora antigua
+                                franja_str_busqueda = f"{r_h['hora_inicio']} - {r_h['hora_fin']}"
+                                idx_franja = 0
+                                for idx, f_op in enumerate(opciones_franjas):
+                                    if f_op.startswith(franja_str_busqueda):
+                                        idx_franja = idx
+                                        break
+                                
+                                e_franja_sel = st.selectbox("Franja Horaria", opciones_franjas, index=idx_franja)
                                 e_frec = st.selectbox("Frecuencia", ["Todas las semanas", "Semanas pares", "Semanas impares"], index=idx_frec_h)
                             
                             c_btn1, c_btn2 = st.columns(2)
                             with c_btn1:
                                 if st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True):
+                                    e_ini = e_franja_sel[0:5]
+                                    e_fin = e_franja_sel[8:13]
                                     frec_db = "Todas" if e_frec == "Todas las semanas" else ("Pares" if e_frec == "Semanas pares" else "Impares")
-                                    db.edit_horario(id_h, e_dia, e_ini.strftime("%H:%M"), e_fin.strftime("%H:%M"), e_tipo, frec_db)
+                                    db.edit_horario(id_h, e_dia, e_ini, e_fin, e_tipo, frec_db)
                                     st.rerun()
                             with c_btn2:
                                 if st.form_submit_button("🗑️ Eliminar Clase", use_container_width=True):
@@ -510,42 +510,67 @@ with tab_horario:
                                     st.rerun()
 
         st.divider()
+        
+        # ======================================================================
+        # RENDERIZADO DEL GRID HORARIO MATRICIAL (MAÑANA O TARDE)
+        # ======================================================================
         dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
-        cols = st.columns(5)
+        
+        franjas_manana = [("08:30", "10:20"), ("10:40", "12:30"), ("12:40", "14:30")]
+        franjas_tarde = [("15:30", "17:20"), ("17:40", "19:30"), ("19:40", "21:30")]
+        
+        # Seleccionar las franjas a renderizar según el radio button elegido arriba
+        franjas_actuales = franjas_manana if turno_grid == "Mañana" else franjas_tarde
+        
+        cols_cabecera = st.columns([1, 2, 2, 2, 2, 2])
+        cols_cabecera[0].markdown("<p style='text-align:center; font-size:12px; font-weight:bold; color:#6B7280;'>Hora</p>", unsafe_allow_html=True)
         for i, dia in enumerate(dias_semana):
-            with cols[i]:
-                st.markdown(f"<p style='text-align:center; font-size:13px; color:#6B7280; border-bottom: 1px solid #E5E7EB; padding-bottom:5px;'>{dia}</p>", unsafe_allow_html=True)
-                if not df_horario.empty and "dia_semana" in df_horario.columns:
-                    # Filtramos y ordenamos por hora de inicio
-                    clases_dia = df_horario[df_horario["dia_semana"] == dia].sort_values("hora_inicio")
+            cols_cabecera[i+1].markdown(f"<p style='text-align:center; font-size:13px; font-weight:bold; color:#4F46E5; border-bottom: 2px solid #E5E7EB; padding-bottom:5px;'>{dia}</p>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        for hora_ini, hora_fin in franjas_actuales:
+            fila_cols = st.columns([1, 2, 2, 2, 2, 2])
+            
+            fila_cols[0].markdown(f"<p style='text-align:center; font-size:11px; font-weight:bold; color:#9CA3AF; padding-top:10px;'>{hora_ini}<br>|<br>{hora_fin}</p>", unsafe_allow_html=True)
+            
+            for i, dia in enumerate(dias_semana):
+                with fila_cols[i+1]:
+                    clases_celda = pd.DataFrame()
+                    if not df_horario.empty:
+                        clases_celda = df_horario[(df_horario["dia_semana"] == dia) & 
+                                                  (df_horario["hora_inicio"] == hora_ini) & 
+                                                  (df_horario["hora_fin"] == hora_fin)]
                     
-                    for _, clase in clases_dia.iterrows():
-                        id_asig = str(clase["id_asignatura"])
-                        nom = mapa_nombres_rev.get(id_asig, id_asig)
-                        
-                        tipo_str = "🧪" if clase.get('tipo') == "Laboratorio" else "📖"
-                        frec_val = clase.get('frecuencia', 'Todas')
-                        
-                        # Comprobar si toca esta semana
-                        es_nuestra_semana = True
-                        if frec_val == "Pares" and not semana_actual_es_par:
-                            es_nuestra_semana = False
-                        elif frec_val == "Impares" and semana_actual_es_par:
-                            es_nuestra_semana = False
+                    if clases_celda.empty:
+                        st.markdown("<div style='min-height:50px;'></div>", unsafe_allow_html=True)
+                    else:
+                        for _, clase in clases_celda.iterrows():
+                            id_asig = str(clase["id_asignatura"])
+                            nom = mapa_nombres_rev.get(id_asig, id_asig)
+                            tipo_str = "🧪" if clase.get('tipo') == "Laboratorio" else "📖"
+                            frec_val = clase.get('frecuencia', 'Todas')
                             
-                        opacidad = "1.0" if es_nuestra_semana else "0.3"
-                        aviso_toca = "" if es_nuestra_semana else " <i>(No hay esta semana)</i>"
-                        
-                        borde_color = "#9CA3AF"
-                        if frec_val == "Pares": borde_color = "#3B82F6"
-                        elif frec_val == "Impares": borde_color = "#8B5CF6"
-                        
-                        st.markdown(f"""
-                            <div style='border-left: 3px solid {borde_color}; padding-left: 8px; margin-bottom: 14px; opacity: {opacidad};'>
-                                <div style='font-size:10px; color:var(--text-color);'>{clase['hora_inicio']} - {clase['hora_fin']} ({frec_val}){aviso_toca}</div>
-                                <div style='font-size:11px; font-weight:600; color:var(--text-color); margin-top:2px;'>{tipo_str} {nom}</div>
-                            </div>
-                        """, unsafe_allow_html=True)
+                            es_nuestra_semana = True
+                            if frec_val == "Pares" and not semana_actual_es_par:
+                                es_nuestra_semana = False
+                            elif frec_val == "Impares" and semana_actual_es_par:
+                                es_nuestra_semana = False
+                                
+                            opacidad = "1.0" if es_nuestra_semana else "0.3"
+                            aviso_toca = "" if es_nuestra_semana else " <i>(No esta semana)</i>"
+                            
+                            borde_color = "#9CA3AF"
+                            if frec_val == "Pares": borde_color = "#3B82F6"
+                            elif frec_val == "Impares": borde_color = "#8B5CF6"
+                            
+                            st.markdown(f"""
+                                <div style='background-color: rgba(79, 70, 229, 0.04); border-left: 3px solid {borde_color}; border-radius: 4px; padding: 6px; margin-bottom: 6px; opacity: {opacidad};'>
+                                    <div style='font-size:9px; color:var(--text-color); opacity:0.8;'>{frec_val}{aviso_toca}</div>
+                                    <div style='font-size:11px; font-weight:600; color:var(--text-color); margin-top:2px;'>{tipo_str} {nom}</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+
 
 # ==============================================================================
 # TAB 3: ASISTENCIA
@@ -560,7 +585,7 @@ with tab_asis:
                 estado = st.radio("Estado", ["Presente", "Falta", "Justificada", "Retraso"], horizontal=True)
                 tipo_clase = st.radio("Tipo", ["Teoría", "Laboratorio"], horizontal=True)
             with c2:
-                fecha = st.date_input("Fecha", value=datetime.now())
+                fecha = st.date_input("Fecha", value=datetime.datetime.now())
                 obs = st.text_input("Observaciones")
             if st.form_submit_button("Guardar", width="stretch"):
                 db.add_asistencia(mapa_activas[asig_sel], estado, obs, str(fecha), tipo_clase)
@@ -591,7 +616,7 @@ with tab_asis:
                             idx_est = estados_validos.index(r_a['estado']) if r_a['estado'] in estados_validos else 0
                             idx_tipo = 1 if r_a['tipo'] == "Laboratorio" else 0
                             try: def_date = pd.to_datetime(r_a['fecha']).date()
-                            except: def_date = datetime.now().date()
+                            except: def_date = datetime.datetime.now().date()
                             
                             with c1:
                                 e_est = st.radio("Estado", estados_validos, index=idx_est, horizontal=True)
@@ -640,7 +665,7 @@ with tab_eval:
                         nota = st.number_input("Nota", min_value=0.0, max_value=10.0, step=0.1, value=7.0)
                     with c_n3:
                         nota_minima = st.number_input("Mínima", min_value=0.0, max_value=10.0, step=0.1, value=0.0)
-                    fecha_eval = st.date_input("Fecha", value=datetime.now())
+                    fecha_eval = st.date_input("Fecha", value=datetime.datetime.now())
                 if st.form_submit_button("Guardar Calificación", width="stretch"):
                     if not concepto.strip():
                         st.error("Introduce un concepto.")
@@ -661,7 +686,7 @@ with tab_eval:
                         ponderacion = st.number_input("Peso (%)", min_value=1.0, max_value=100.0, step=5.0, value=40.0)
                     with c_p2:
                         nota_minima = st.number_input("Nota Mínima", min_value=0.0, max_value=10.0, step=0.1, value=5.0)
-                    fecha_plan = st.date_input("Fecha del examen", value=datetime.now())
+                    fecha_plan = st.date_input("Fecha del examen", value=datetime.datetime.now())
                 if st.form_submit_button("Planificar en el Calendario", width="stretch"):
                     if not concepto.strip():
                         st.error("Introduce un concepto.")
@@ -753,7 +778,7 @@ with tab_eval:
                             c1, c2, c3, c4 = st.columns(4)
                             idx_tipo_c = 1 if r_c['tipo'] == "Laboratorio" else 0
                             try: def_date_c = pd.to_datetime(r_c['fecha']).date()
-                            except: def_date_c = datetime.now().date()
+                            except: def_date_c = datetime.datetime.now().date()
                             
                             with c1: e_tipo = st.radio("Tipo", ["Teoría", "Laboratorio"], index=idx_tipo_c, horizontal=True)
                             with c2: e_pond = st.number_input("Peso (%)", min_value=1.0, max_value=100.0, value=float(r_c['ponderacion_pct']))
@@ -993,7 +1018,7 @@ with tab_entregas:
                             e_desc = st.text_input("Descripción", value=str(r_e['descripcion']))
                             c1, c2 = st.columns(2)
                             try: def_date_e = pd.to_datetime(r_e['fecha_limite']).date()
-                            except: def_date_e = datetime.now().date()
+                            except: def_date_e = datetime.datetime.now().date()
                             
                             with c1: e_fec = st.date_input("Fecha Límite", value=def_date_e)
                             with c2:
@@ -1154,7 +1179,7 @@ with tab_asig:
             with st.form("form_extra", clear_on_submit=True):
                 desc_extra = st.text_input("Descripción (Ej: Certificado B2 Inglés)")
                 cred_extra = st.number_input("Créditos ECTS", min_value=0.5, max_value=30.0, value=3.0, step=0.5)
-                fec_extra = st.date_input("Fecha de obtención", value=datetime.now())
+                fec_extra = st.date_input("Fecha de obtención", value=datetime.datetime.now())
                 
                 if st.form_submit_button("Añadir Créditos", width="stretch"):
                     if not desc_extra.strip():
@@ -1198,7 +1223,7 @@ with tab_ajustes:
             st.download_button(
                 label="💾 Descargar copia de seguridad (.db)",
                 data=db_bytes,
-                file_name=f"backup_carrera_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
+                file_name=f"backup_carrera_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.db",
                 mime="application/octet-stream",
                 use_container_width=True
             )

@@ -77,29 +77,37 @@ def get_table(table_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 def init_db():
+    """Inicializa las tablas de la base de datos en Turso si no existen."""
     queries = [
         '''CREATE TABLE IF NOT EXISTS asignaturas (
             id_asignatura TEXT PRIMARY KEY, nombre TEXT, curso INTEGER, 
             cuatrimestre INTEGER, creditos REAL, min_asistencia_pct REAL, 
             estado TEXT, nota_final REAL, comentarios TEXT, num_matricula INTEGER,
             link_guia TEXT, link_campus TEXT, link_apuntes TEXT)''',
+            
         '''CREATE TABLE IF NOT EXISTS asistencia (
             id_registro TEXT PRIMARY KEY, fecha TEXT, id_asignatura TEXT, 
             estado TEXT, observaciones TEXT, tipo TEXT)''',
+            
         '''CREATE TABLE IF NOT EXISTS calificaciones (
             id_evaluacion TEXT PRIMARY KEY, id_asignatura TEXT, concepto TEXT, 
             ponderacion_pct REAL, nota REAL, fecha TEXT, estado TEXT, tipo TEXT, nota_minima REAL)''',
+            
         '''CREATE TABLE IF NOT EXISTS horario (
             id_horario TEXT PRIMARY KEY, id_asignatura TEXT, dia_semana TEXT, 
-            hora_inicio TEXT, hora_fin TEXT, tipo TEXT, frecuencia TEXT)''',
+            hora_inicio TEXT, hora_fin TEXT, tipo TEXT, frecuencia TEXT, aula TEXT)''',
+            
         '''CREATE TABLE IF NOT EXISTS entregas (
             id_entrega TEXT PRIMARY KEY, id_asignatura TEXT, descripcion TEXT, 
             fecha_limite TEXT, ponderacion REAL, completada INTEGER)''',
+            
         '''CREATE TABLE IF NOT EXISTS reglas (
             id_regla TEXT PRIMARY KEY, id_asignatura TEXT, descripcion TEXT, 
             tipo TEXT, ids_evaluaciones TEXT, valor_exigido REAL)''',
+            
         '''CREATE TABLE IF NOT EXISTS creditos_extra (
             id_credito TEXT PRIMARY KEY, descripcion TEXT, creditos REAL, fecha TEXT)''',
+            
         '''CREATE TABLE IF NOT EXISTS config_paridad (
             id TEXT PRIMARY KEY, fecha_inicio TEXT, tipo_inicial TEXT)'''
     ]
@@ -108,8 +116,14 @@ def init_db():
         try:
             execute_query(q)
         except Exception as e:
-            print(f"Error en init_db: {e}")
+            print(f"Error inicializando tabla: {e}")
             pass
+            
+    # TRUCO MÁGICO: Actualizar la tabla existente en Turso si no tenía la columna 'aula'
+    try:
+        execute_query("ALTER TABLE horario ADD COLUMN aula TEXT")
+    except:
+        pass # Si la columna ya existe, fallará silenciosamente y no pasará nada
 
 init_db()
 
