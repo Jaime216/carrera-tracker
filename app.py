@@ -421,12 +421,13 @@ with tab_horario:
                 with c2: 
                     h_franja_sel = st.selectbox("Franja Horaria", opciones_franjas)
                     h_frec = st.selectbox("Frecuencia", ["Todas las semanas", "Semanas pares", "Semanas impares"])
+                    h_aula = st.text_input("Aula (Opcional)", placeholder="Ej: Aula 1.2, Lab 3...")
                 
                 if st.form_submit_button("Añadir al horario", use_container_width=True):
                     h_ini = h_franja_sel[0:5]
                     h_fin = h_franja_sel[8:13]
                     frec_db = "Todas" if h_frec == "Todas las semanas" else ("Pares" if h_frec == "Semanas pares" else "Impares")
-                    db.add_horario(mapa_activas[h_asig], h_dia, h_ini, h_fin, h_tipo, frec_db)
+                    db.add_horario(mapa_activas[h_asig], h_dia, h_ini, h_fin, h_tipo, frec_db, h_aula)
                     aplicar_cambios()
                     
         with st.expander("✏️ Editar o Eliminar clase existente"):
@@ -441,7 +442,12 @@ with tab_horario:
                     for _, r in df_h_act.iterrows():
                         n_asig = mapa_nombres_rev.get(str(r['id_asignatura']), "Asig")
                         frec_txt = "" if r['frecuencia'] == "Todas" else f" ({r['frecuencia']})"
-                        etiq = f"{n_asig} | {r['dia_semana']} ({r['hora_inicio']} - {r['hora_fin']}){frec_txt}"
+                        
+                        raw_aula = r.get('aula')
+                        aula_actual = str(raw_aula).strip() if pd.notnull(raw_aula) and str(raw_aula).strip() not in ["", "None"] else ""
+                        aula_txt = f" | 📍 {aula_actual}" if aula_actual else " | (Sin aula)"
+                        
+                        etiq = f"{n_asig} | {r['dia_semana']} ({r['hora_inicio']} - {r['hora_fin']}){frec_txt}{aula_txt}"
                         opciones_h[etiq] = str(r['id_horario'])
                     
                     sel_h = st.selectbox("Clase a modificar", list(opciones_h.keys()))
@@ -455,6 +461,9 @@ with tab_horario:
                         if frec_val == "Pares": idx_frec_h = 1
                         elif frec_val == "Impares": idx_frec_h = 2
                         
+                        raw_aula_sel = r_h.get('aula')
+                        aula_def = str(raw_aula_sel).strip() if pd.notnull(raw_aula_sel) and str(raw_aula_sel).strip() not in ["", "None"] else ""
+                        
                         with st.form("form_edit_horario"):
                             c1, c2 = st.columns(2)
                             dias_validos = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"]
@@ -463,6 +472,7 @@ with tab_horario:
                             with c1: 
                                 e_dia = st.selectbox("Día", dias_validos, index=idx_dia)
                                 e_tipo = st.radio("Tipo de clase", ["Teoría", "Laboratorio"], index=idx_tipo_h, horizontal=True)
+                                e_aula = st.text_input("Aula", value=aula_def, placeholder="Escribe el aula para asignarla...")
                             with c2: 
                                 franja_str_busqueda = f"{r_h['hora_inicio']} - {r_h['hora_fin']}"
                                 idx_franja = 0
@@ -480,7 +490,7 @@ with tab_horario:
                                     e_ini = e_franja_sel[0:5]
                                     e_fin = e_franja_sel[8:13]
                                     frec_db = "Todas" if e_frec == "Todas las semanas" else ("Pares" if e_frec == "Semanas pares" else "Impares")
-                                    db.edit_horario(id_h, e_dia, e_ini, e_fin, e_tipo, frec_db)
+                                    db.edit_horario(id_h, e_dia, e_ini, e_fin, e_tipo, frec_db, e_aula)
                                     aplicar_cambios()
                             with c_btn2:
                                 if st.form_submit_button("🗑️ Eliminar Clase", use_container_width=True):
@@ -525,6 +535,10 @@ with tab_horario:
                             tipo_str = "🧪" if clase.get('tipo') == "Laboratorio" else "📖"
                             frec_val = clase.get('frecuencia', 'Todas')
                             
+                            raw_aula_card = clase.get('aula')
+                            aula_val = str(raw_aula_card).strip() if pd.notnull(raw_aula_card) and str(raw_aula_card).strip() not in ["", "None"] else ""
+                            html_aula = f"<div style='font-size:10px; color:var(--text-color); opacity:0.85; margin-top:2px;'>📍 {aula_val}</div>" if aula_val else ""
+                            
                             es_nuestra_semana = True
                             if frec_val == "Pares" and not semana_actual_es_par:
                                 es_nuestra_semana = False
@@ -542,6 +556,7 @@ with tab_horario:
                                 <div style='background-color: rgba(79, 70, 229, 0.04); border-left: 3px solid {borde_color}; border-radius: 4px; padding: 6px; margin-bottom: 6px; opacity: {opacidad};'>
                                     <div style='font-size:9px; color:var(--text-color); opacity:0.8;'>{frec_val}{aviso_toca}</div>
                                     <div style='font-size:11px; font-weight:600; color:var(--text-color); margin-top:2px;'>{tipo_str} {nom}</div>
+                                    {html_aula}
                                 </div>
                             """, unsafe_allow_html=True)
 

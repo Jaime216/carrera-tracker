@@ -200,15 +200,23 @@ def suspender_asignatura(id_asignatura: str, nota_final: float):
     return True
 
 # --- HORARIO ---
-def add_horario(id_asignatura: str, dia: str, inicio: str, fin: str, tipo: str = "Teoría", frecuencia: str = "Todas"):
+def add_horario(id_asignatura: str, dia: str, inicio: str, fin: str, tipo: str = "Teoría", frecuencia: str = "Todas", aula: str = ""):
     id_hor = str(uuid.uuid4())[:8]
-    execute_query("INSERT INTO horario (id_horario, id_asignatura, dia_semana, hora_inicio, hora_fin, tipo, frecuencia) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-                  (id_hor, id_asignatura, dia, inicio, fin, tipo, frecuencia))
+    execute_query(
+        "INSERT INTO horario (id_horario, id_asignatura, dia_semana, hora_inicio, hora_fin, tipo, frecuencia, aula) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", 
+        (id_hor, id_asignatura, dia, inicio, fin, tipo, frecuencia, aula.strip())
+    )
     return True
 
-def edit_horario(id_horario: str, dia: str, inicio: str, fin: str, tipo: str, frecuencia: str):
-    execute_query("UPDATE horario SET dia_semana=?, hora_inicio=?, hora_fin=?, tipo=?, frecuencia=? WHERE id_horario=?", 
-                  (dia, inicio, fin, tipo, frecuencia, id_horario))
+def edit_horario(id_horario: str, dia: str, inicio: str, fin: str, tipo: str, frecuencia: str, aula: str = ""):
+    execute_query(
+        "UPDATE horario SET dia_semana=?, hora_inicio=?, hora_fin=?, tipo=?, frecuencia=?, aula=? WHERE id_horario=?", 
+        (dia, inicio, fin, tipo, frecuencia, aula.strip(), id_horario)
+    )
+    return True
+
+def delete_horario(id_horario: str):
+    execute_query("DELETE FROM horario WHERE id_horario = ?", (id_horario,))
     return True
 
 def delete_horario(id_horario: str):
