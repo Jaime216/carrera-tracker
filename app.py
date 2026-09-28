@@ -144,8 +144,12 @@ if not df_notas.empty:
     df_notas["tipo"] = df_notas["tipo"].fillna("Teoría").replace("", "Teoría")
 
 if not df_entregas.empty:
+    df_entregas.columns = df_entregas.columns.str.strip().str.lower()
     if "fecha_limite" not in df_entregas.columns: df_entregas["fecha_limite"] = pd.NA
     df_entregas["fecha_limite"] = pd.to_datetime(df_entregas["fecha_limite"], errors="coerce")
+    
+    if "ponderacion" not in df_entregas.columns: df_entregas["ponderacion"] = pd.NA
+    df_entregas["ponderacion"] = pd.to_numeric(df_entregas["ponderacion"], errors="coerce")
     
     if "completada" not in df_entregas.columns: df_entregas["completada"] = 0
     df_entregas["completada"] = pd.to_numeric(df_entregas["completada"], errors="coerce").fillna(0).astype(int)
@@ -932,7 +936,7 @@ with tab_entregas:
                 desc_ent = st.text_input("Descripción (ej. Ejercicios Tema 4)")
                 fecha_ent = st.date_input("Fecha Límite")
                 cuenta_nota = st.checkbox("¿Cuenta para la nota final?")
-                peso_ent = st.number_input("Ponderación (%)", min_value=1.0, max_value=100.0, value=10.0, disabled=not cuenta_nota)
+                peso_ent = st.number_input("Ponderación (%) (solo si cuenta)", min_value=1.0, max_value=100.0, value=10.0)
 
                 if st.form_submit_button("Guardar Tarea", width="stretch"):
                     if not desc_ent.strip():
@@ -1007,7 +1011,7 @@ with tab_entregas:
                             with c2:
                                 tenia_pond = pd.notnull(r_e['ponderacion'])
                                 e_cuenta = st.checkbox("¿Cuenta para nota?", value=tenia_pond)
-                                e_pond = st.number_input("Ponderación (%)", min_value=1.0, max_value=100.0, value=float(r_e['ponderacion']) if tenia_pond else 10.0, disabled=not e_cuenta)
+                                e_pond = st.number_input("Ponderación (%) (solo si cuenta)", min_value=1.0, max_value=100.0, value=float(r_e['ponderacion']) if tenia_pond else 10.0)
                                 
                             c_btn1, c_btn2 = st.columns(2)
                             with c_btn1:

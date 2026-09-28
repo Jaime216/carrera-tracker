@@ -42,9 +42,15 @@ def execute_query(query, params=None):
     
     response = requests.post(f"{TURSO_URL}/v2/pipeline", headers=headers, json=payload)
     if response.status_code != 200:
-        raise Exception(f"Error de base de datos: {response.text}")
+        raise Exception(f"Error de conexión con Turso: {response.text}")
     
-    return response.json()
+    res_json = response.json()
+    if "results" in res_json and len(res_json["results"]) > 0:
+        if res_json["results"][0].get("type") == "error":
+            err_msg = res_json["results"][0].get("error", {}).get("message", "Error SQL desconocido")
+            raise Exception(f"Error SQL en Turso: {err_msg}")
+            
+    return res_json
 
 def get_table(table_name: str) -> pd.DataFrame:
     try:
@@ -114,6 +120,14 @@ def init_db():
             
     try:
         execute_query("ALTER TABLE horario ADD COLUMN aula TEXT")
+    except:
+        pass
+    try:
+        execute_query("ALTER TABLE entregas ADD COLUMN ponderacion REAL")
+    except:
+        pass
+    try:
+        execute_query("ALTER TABLE entregas ADD COLUMN completada INTEGER DEFAULT 0")
     except:
         pass
 
@@ -226,8 +240,10 @@ def delete_horario(id_horario: str):
 # --- ENTREGAS ---
 def add_entrega(id_asignatura: str, descripcion: str, fecha_limite: str, ponderacion: float = None):
     id_ent = str(uuid.uuid4())[:8]
-    execute_query("INSERT INTO entregas VALUES (?, ?, ?, ?, ?, ?)", 
-                  (id_ent, id_asignatura, descripcion, fecha_limite, ponderacion, 0))
+    execute_query(
+        "INSERT INTO entregas (id_entrega, id_asignatura, descripcion, fecha_limite, ponderacion, completada) VALUES (?, ?, ?, ?, ?, ?)", 
+        (id_ent, id_asignatura, descripcion.strip(), fecha_limite, ponderacion, 0)
+    )
     return True
 
 def toggle_entrega(id_entrega: str, estado_completada: int):
