@@ -379,32 +379,38 @@ with tab_horario:
     
     conf_paridad = db.get_paridad_config()
     hoy_date = date.today()
+    lunes_actual = hoy_date - datetime.timedelta(days=hoy_date.weekday())
     
     if conf_paridad:
         f_inicio = datetime.datetime.strptime(conf_paridad["fecha_inicio"], "%Y-%m-%d").date()
+        lunes_inicio = f_inicio - datetime.timedelta(days=f_inicio.weekday())
         tipo_ini = conf_paridad["tipo_inicial"]
-        delta_dias = (hoy_date - f_inicio).days
-        num_semanas_transcurridas = max(0, delta_dias // 7)
+        
+        num_semanas_transcurridas = (lunes_actual - lunes_inicio).days // 7
         if tipo_ini == "Pares":
             semana_actual_es_par = (num_semanas_transcurridas % 2 == 0)
         else:
             semana_actual_es_par = (num_semanas_transcurridas % 2 != 0)
     else:
+        f_inicio = lunes_actual
+        tipo_ini = "Pares"
         semana_actual_es_par = (hoy_date.isocalendar()[1] % 2 == 0)
 
     col_p1, col_p2, col_p3 = st.columns([2, 1, 1])
     with col_p1:
         txt_sem = "🟢 Semana actual: **PAR**" if semana_actual_es_par else "🟣 Semana actual: **IMPAR**"
-        st.markdown(f"### {txt_sem} (Semana del {hoy_date.strftime('%d/%m/%Y')})")
+        st.markdown(f"### {txt_sem} (Semana del {lunes_actual.strftime('%d/%m/%Y')})")
     with col_p2:
         turno_grid = st.radio("Turno a mostrar", ["Mañana", "Tarde"], horizontal=True)
     with col_p3:
         with st.expander("⚙️ Config. Paridad"):
             with st.form("form_paridad"):
-                f_ref = st.date_input("Lunes Semana 1", value=date(2026, 9, 7))
-                t_ref = st.selectbox("¿Qué tipo fue?", ["Pares", "Impares"])
+                f_ref = st.date_input("Semana de referencia", value=f_inicio)
+                idx_par = 1 if tipo_ini == "Impares" else 0
+                t_ref = st.selectbox("¿Qué tipo fue esa semana?", ["Pares", "Impares"], index=idx_par)
                 if st.form_submit_button("Guardar"):
-                    db.set_paridad_config(str(f_ref), t_ref)
+                    lunes_ref = f_ref - datetime.timedelta(days=f_ref.weekday())
+                    db.set_paridad_config(str(lunes_ref), t_ref)
                     aplicar_cambios()
 
     opciones_franjas = [
